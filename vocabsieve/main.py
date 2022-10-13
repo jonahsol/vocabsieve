@@ -8,10 +8,17 @@ from typing import Optional
 DEBUGGING = None
 if os.environ.get("VOCABSIEVE_DEBUG"):
     DEBUGGING = True
-    QCoreApplication.setApplicationName(
-        "VocabSieve" + os.environ.get("VOCABSIEVE_DEBUG", ""))
-else:
-    QCoreApplication.setApplicationName("VocabSieve")
+
+def getDebugDescription():
+    return "(debug=" + os.environ.get("VOCABSIEVE_DEBUG", "") + ")"
+def getAppTitle():
+    name = "VocabSieve"
+    if DEBUGGING: 
+        return name + " " + getDebugDescription()
+    else:
+        return name
+
+QCoreApplication.setApplicationName(getAppTitle())
 QCoreApplication.setOrganizationName("FreeLanguageTools")
 
 from .config import *
@@ -80,7 +87,7 @@ class MyTextEdit(QTextEdit):
 class DictionaryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VocabSieve" + os.environ.get("VOCABSIEVE_DEBUG", ""))
+        self.setWindowTitle(getAppTitle())
         self.setFocusPolicy(Qt.StrongFocus)
         self.widget = QWidget()
         self.settings = QSettings()
@@ -165,16 +172,8 @@ class DictionaryWindow(QMainWindow):
             pass
 
     def initWidgets(self):
-        if os.environ.get("VOCABSIEVE_DEBUG"):
-            self.namelabel = QLabel(
-                "<h2 style=\"font-weight: normal;\">VocabSieve"
-                " (debug=" + os.environ.get("VOCABSIEVE_DEBUG", "")
-                + ")</h2>")
-        else:
-            self.namelabel = QLabel(
-                "<h2 style=\"font-weight: normal;\">VocabSieve v" +
-                __version__ +
-                "</h2>")
+        self.namelabel = QLabel(
+            "<h2 style=\"font-weight: normal;\">" + getAppTitle() + "</h2>")
         self.menu = QMenuBar(self)
         self.sentence = MyTextEdit()
         self.sentence.setPlaceholderText(
