@@ -6,8 +6,8 @@ import re
 tokenize = word_tokenize
 detokenize = TreebankWordDetokenizer().detokenize
 
-re_bolded = r"__([ \w]+)__"
-apply_bold = lambda word: f"__{word}__"
+re_bolded = r"<b>([ \w]+)</b>"
+apply_bold = lambda word: f"<b>{word}</b>"
 
 def remove_bold(text):
     return re.sub(re_bolded, lambda match: match.group(1), text)
