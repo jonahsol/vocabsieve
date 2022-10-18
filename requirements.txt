@@ -21,4 +21,5 @@ markdown
 markdownify
 readmdict
 python-lzo; sys_platform == 'linux'
-
+packaging
+vocabsieve

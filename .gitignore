@@ -8,3 +8,4 @@ cx_freeze/build
 .coverage
 htmlcov
 .tox
+venv/
