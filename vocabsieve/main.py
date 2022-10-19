@@ -31,6 +31,7 @@ from . import __version__
 from .ext.reader import ReaderServer
 from .ext.importer import KindleImporter, KoreaderImporter
 from .text_manipulation import *
+from .gui import append_failed_lookup_blocks, remove_failed_lookup_blocks
 import sys
 import importlib
 import functools
@@ -43,6 +44,8 @@ from packaging import version
 from markdown import markdown
 from markdownify import markdownify
 from datetime import datetime
+from collections import defaultdict
+from enum import Enum, unique, auto
 import re
 Path(os.path.join(datapath, "images")).mkdir(parents=True, exist_ok=True)
 # If on macOS, display the modifier key as "Cmd", else display it as "Ctrl".
@@ -53,6 +56,24 @@ if platform.system() == "Darwin":
 else:
     MOD = "Ctrl"
 
+@unique
+class Field(Enum):
+    SENTENCE = auto()
+    DEFINITION = auto()
+    DEFINITION2 = auto()
+
+@unique
+class Event(Enum):
+    DOUBLECLICK = auto()
+    MOUSEPRESS = auto()
+
+events = {}
+events[Event.DOUBLECLICK] = {
+    fieldEnum: Event.DOUBLECLICK.name + fieldEnum.name for fieldEnum in Field }
+events[Event.MOUSEPRESS] = {
+    fieldEnum: Event.MOUSEPRESS.name + fieldEnum.name for fieldEnum in Field }
+
+
 @functools.lru_cache()
 class GlobalObject(QObject):
     """
@@ -61,28 +82,34 @@ class GlobalObject(QObject):
 
     def __init__(self):
         super().__init__()
-        self._events = {}
+        self._events = defaultdict(list)
 
     def addEventListener(self, name, func):
-        if name not in self._events:
-            self._events[name] = [func]
-        else:
-            self._events[name].append(func)
+        self._events[name].append(func)
 
-    def dispatchEvent(self, name):
-        functions = self._events.get(name, [])
+    def dispatchEvent(self, name, **args):
+        functions = self._events[name]
         for func in functions:
-            QTimer.singleShot(0, func)
+            QTimer.singleShot(0, lambda: func(**args))
 
 
 class MyTextEdit(QTextEdit):
 
+    def __init__(self, fieldEnum):
+        super().__init__()
+        self.fieldEnum = fieldEnum
+    
     @pyqtSlot()
     def mouseDoubleClickEvent(self, e):
         super().mouseDoubleClickEvent(e)
-        GlobalObject().dispatchEvent("double clicked")
+        GlobalObject().dispatchEvent(events[Event.DOUBLECLICK][self.fieldEnum])
         self.textCursor().clearSelection()
         self.original = ""
+
+    @pyqtSlot()
+    def mousePressEvent(self, e):
+        super().mousePressEvent(e)
+        GlobalObject().dispatchEvent(events[Event.MOUSEPRESS][self.fieldEnum])
 
 
 class DictionaryWindow(QMainWindow):
@@ -114,7 +141,15 @@ class DictionaryWindow(QMainWindow):
         self.setupShortcuts()
         self.checkUpdates()
 
-        GlobalObject().addEventListener("double clicked", self.lookupClicked)
+        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.SENTENCE],
+                                        lambda: self.textEditDoubleClicked(Field.SENTENCE))
+        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION],
+                                        lambda: self.textEditDoubleClicked(Field.DEFINITION))
+        GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION],
+                                        self.definitionEditPressed)
+        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION2],
+                                        lambda: self.textEditDoubleClicked(Field.DEFINITION2))
+
         if self.settings.value("primary", False, type=bool)\
                 and QClipboard.supportsSelection(QApplication.clipboard()):
             QApplication.clipboard().selectionChanged.connect(
@@ -176,19 +211,26 @@ class DictionaryWindow(QMainWindow):
         self.namelabel = QLabel(
             "<h2 style=\"font-weight: normal;\">" + getAppTitle() + "</h2>")
         self.menu = QMenuBar(self)
-        self.sentence = MyTextEdit()
+
+        self.sentence = MyTextEdit(Field.SENTENCE)
         self.sentence.setPlaceholderText(
             "Sentence copied to the clipboard will show up here.")
         self.sentence.setMinimumHeight(50)
         #self.sentence.setMaximumHeight(300)
         self.word = QLineEdit()
         self.word.setPlaceholderText("Word will appear here when looked up.")
-        self.definition = MyTextEdit()
+        self.definition = MyTextEdit(Field.DEFINITION)
         self.definition.setMinimumHeight(70)
         #self.definition.setMaximumHeight(1800)
-        self.definition2 = MyTextEdit()
+        self.definition2 = MyTextEdit(Field.DEFINITION2)
         self.definition2.setMinimumHeight(70)
         #self.definition2.setMaximumHeight(1800)
+
+        self.fieldEnumToField = {}
+        self.fieldEnumToField[Field.SENTENCE] = self.sentence
+        self.fieldEnumToField[Field.DEFINITION] = self.definition
+        self.fieldEnumToField[Field.DEFINITION2] = self.definition2
+        
         self.tags = QLineEdit()
         self.tags.setPlaceholderText(
             "Type in a list of tags to be used, separated by spaces (same as in Anki).")
@@ -332,6 +374,7 @@ class DictionaryWindow(QMainWindow):
         self.read_button.clicked.connect(lambda: self.clipboardChanged(True))
 
         self.sentence.textChanged.connect(self.updateAnkiButtonState)
+        self.definition.textChanged.connect(self.updateAnkiButtonState)
 
         self.bar.addPermanentWidget(self.stats_label)
 
@@ -548,23 +591,6 @@ class DictionaryWindow(QMainWindow):
         self.shortcut_web = QShortcut(QKeySequence('Ctrl+1'), self)
         self.shortcut_web.activated.connect(self.web_button.animateClick)
 
-    def getCurrentWord(self):
-        cursor = self.sentence.textCursor()
-        selected = cursor.selectedText()
-        cursor2 = self.definition.textCursor()
-        selected2 = cursor2.selectedText()
-        cursor3 = self.definition2.textCursor()
-        selected3 = cursor3.selectedText()
-        target = str.strip(selected
-                           or selected2
-                           or selected3
-                           or self.previousWord
-                           or self.word.text()
-                           or "")
-        self.previousWord = target
-
-        return target
-
     def onWebButton(self):
         url = self.settings.value("custom_url",
                                   "https://en.wiktionary.org/wiki/@@@@").replace(
@@ -576,12 +602,38 @@ class DictionaryWindow(QMainWindow):
         url = f"http://{self.settings.value('reader_host', '127.0.0.1', type=str)}:{self.settings.value('reader_port', '39285', type=str)}"
         QDesktopServices.openUrl(QUrl(url))
 
-    def lookupClicked(self, use_lemmatize=True):
-        target = self.getCurrentWord()
+    def handleFailedLookup(self, word):
+        self.definition.clearOnClickTextBlock = append_failed_lookup_blocks(self, word)
+            
+        self.updateAnkiButtonState(True)
+        self.definition.setReadOnly(True)
+
+    def clearFailedLookup(self):
+        remove_failed_lookup_blocks(self)
+        self.updateAnkiButtonState(False)
+        self.definition.setReadOnly(False)
+
+    def definitionEditPressed(self):
+        if (self.definition.clearOnClickTextBlock and
+                self.definition.textCursor().block() == self.definition.clearOnClickTextBlock):
+            self.clearFailedLookup()
+
+    def textEditDoubleClicked(self, fieldEnum):
+        wordClicked = self.getCurrentWord(fieldEnum)
+        self.lookupClickedWord(wordClicked)
+
+    def getCurrentWord(self, fieldEnum):
+        cursor = self.fieldEnumToField[fieldEnum].textCursor()
+        selected = cursor.selectedText()
+        word = str.strip(selected or self.previousWord or self.word.text() or "")
+
+        return word
+
+    def lookupClickedWord(self, word, use_lemmatize=True):
         self.updateAnkiButtonState()
-        if target == "":
+        if word == "":
             return
-        self.lookupSet(target, use_lemmatize)
+        self.lookupSet(word, use_lemmatize)
 
     def setState(self, state):
         self.word.setText(state['word'])
@@ -719,6 +771,8 @@ class DictionaryWindow(QMainWindow):
             self.setSentence(preprocess_clipboard(text, lang))
 
     def lookupSet(self, word, use_lemmatize=True):
+        self.clearFailedLookup()
+        
         # Bold text
         sentence_text = self.sentence.toPlainText()
         if self.settings.value("bold_word", True, type=bool):
@@ -733,7 +787,11 @@ class DictionaryWindow(QMainWindow):
 
         QCoreApplication.processEvents()
         result = self.lookup(word, use_lemmatize)
-        self.setState(result)
+        if (result):
+            self.setState(result)
+        else:
+            self.handleFailedLookup(word)
+
         QCoreApplication.processEvents()
         self.audio_path = None
         if self.settings.value("audio_dict", "Forvo (all)") != "<disabled>":
@@ -819,12 +877,9 @@ class DictionaryWindow(QMainWindow):
                 self.status(str(e))
                 self.rec.recordLookup(
                     word, None, TL, lemmatize, dictname, False)
-                self.updateAnkiButtonState(True)
-            item = {
-                "word": word,
-                "definition": failed_lookup(word, self.settings)
-            }
-            return item
+
+            return None
+
         dict2name = self.settings.value("dict_source2", "<disabled>")
         if dict2name == "<disabled>":
             return item
