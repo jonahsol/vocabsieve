@@ -18,12 +18,13 @@ def request(action, **params):
     return {'action': action, 'params': params, 'version': 6}
 
 
+requestTimeout = 2
 def invoke(action, server, **params):
     requestJson = json.dumps(request(action, **params)).encode('utf-8')
     response = json.load(
         urllib.request.urlopen(
             urllib.request.Request(
-                server, requestJson)))
+                server, requestJson), timeout=requestTimeout))
     if len(response) != 2:
         raise Exception('response has an unexpected number of fields')
     if 'error' not in response:
