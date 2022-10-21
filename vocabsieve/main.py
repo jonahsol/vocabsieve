@@ -770,6 +770,7 @@ class DictionaryWindow(QMainWindow):
         else:
             self.setSentence(preprocess_clipboard(text, lang))
 
+    
     def lookupSet(self, word, use_lemmatize=True):
         self.clearFailedLookup()
         
@@ -786,6 +787,10 @@ class DictionaryWindow(QMainWindow):
         self.sentence.setText(sentence_text)
 
         QCoreApplication.processEvents()
+
+        word = re.sub('[«»…,()\\[\\]_]*', "", word)
+        self.word.setText(word)
+
         result = self.lookup(word, use_lemmatize)
         if (result):
             self.setState(result)
@@ -832,7 +837,6 @@ class DictionaryWindow(QMainWindow):
         gtrans_lang = self.settings.value("gtrans_lang", "en")
         dictname = self.settings.value("dict_source", "Wiktionary (English)")
         freqname = self.settings.value("freq_source", "<disabled>")
-        word = re.sub('[«»…,()\\[\\]_]*', "", word)
         if freqname != "<disabled>":
             freq_found = False
             freq_display = self.settings.value("freq_display", "Rank")
