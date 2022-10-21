@@ -977,7 +977,8 @@ class DictionaryWindow(QMainWindow):
                 self,
                 f"Failed to add note: {word}",
                 "<h2>Failed to add note</h2>"
-                + str(e)
+                + f"Reason: {e}"
+                + "<br><br>"
                 + "AnkiConnect must be running to add notes."
                 "<br>If you wish to only add notes to the database (and "
                 "export it as CSV), click Configure and uncheck 'Enable"
