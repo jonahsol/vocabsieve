@@ -15,6 +15,7 @@ from .db import *
 from .playsound import playsound
 from .forvo import *
 from .dictformats import removeprefix
+from .constants import DISABLED
 dictdb = LocalDictionary()
 
 gtrans_languages = ['af', 'sq', 'am', 'ar', 'hy', 'az', 'eu', 'be', 'bn',
@@ -256,7 +257,7 @@ def getDictsForLang(lang: str, dicts: list):
 
 def getAudioDictsForLang(lang: str, dicts: list):
     "Get the list of audio dictionaries for a given language"
-    results = ["<disabled>"]
+    results = [DISABLED]
     results.extend(pronunciation_sources)
     audiolibs = [item['name'] for item in dicts if item['lang']
                  == lang and item['type'] == "audiolib"]

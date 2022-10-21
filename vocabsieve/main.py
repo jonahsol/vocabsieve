@@ -31,7 +31,8 @@ from . import __version__
 from .ext.reader import ReaderServer
 from .ext.importer import KindleImporter, KoreaderImporter
 from .text_manipulation import *
-from .gui import append_failed_lookup_blocks, remove_failed_lookup_blocks
+from .gui import *
+from .constants import *
 import sys
 import importlib
 import functools
@@ -98,6 +99,8 @@ class MyTextEdit(QTextEdit):
     def __init__(self, fieldEnum):
         super().__init__()
         self.fieldEnum = fieldEnum
+        self.partialLookupFailureBlock = None
+        self.completeLookupFailureBlock = None
     
     @pyqtSlot()
     def mouseDoubleClickEvent(self, e):
@@ -121,7 +124,6 @@ class DictionaryWindow(QMainWindow):
         self.settings = QSettings()
         self.rec = Record()
         self.setCentralWidget(self.widget)
-        self.previousWord = ""
         self.audio_path = ""
         self.prev_clipboard = ""
         self.image_path = None 
@@ -141,14 +143,19 @@ class DictionaryWindow(QMainWindow):
         self.setupShortcuts()
         self.checkUpdates()
 
+        # Sentence listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.SENTENCE],
                                         lambda: self.textEditDoubleClicked(Field.SENTENCE))
+        # Definition listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION],
                                         lambda: self.textEditDoubleClicked(Field.DEFINITION))
         GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION],
-                                        self.definitionEditPressed)
+                                        lambda: self.defnFieldPressed(Field.DEFINITION))
+        # Definition 2 listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION2],
                                         lambda: self.textEditDoubleClicked(Field.DEFINITION2))
+        GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION2],
+                                        lambda: self.defnFieldPressed(Field.DEFINITION2))
 
         if self.settings.value("primary", False, type=bool)\
                 and QClipboard.supportsSelection(QApplication.clipboard()):
@@ -335,7 +342,7 @@ class DictionaryWindow(QMainWindow):
         self.layout.addWidget(self.word, 5, 0, 1, 3)
         self.layout.setRowStretch(7, 2)
         self.layout.setRowStretch(9, 2)
-        if self.settings.value("dict_source2", "<disabled>") != "<disabled>":
+        if self.settings.value("dict_source2", DISABLED) != DISABLED:
             self.layout.addWidget(self.definition, 7, 0, 2, 3)
             self.layout.addWidget(self.definition2, 9, 0, 2, 3)
         else:
@@ -374,7 +381,6 @@ class DictionaryWindow(QMainWindow):
         self.read_button.clicked.connect(lambda: self.clipboardChanged(True))
 
         self.sentence.textChanged.connect(self.updateAnkiButtonState)
-        self.definition.textChanged.connect(self.updateAnkiButtonState)
 
         self.bar.addPermanentWidget(self.stats_label)
 
@@ -492,9 +498,9 @@ class DictionaryWindow(QMainWindow):
 
         self.layout.addWidget(
             QLabel("<h3 style=\"font-weight: normal;\">Definition</h3>"), 1, 3)
-        self.layout.add, language, greedy_lemmatizeWidget(self.web_button, 1, 4)
+        # self.layout.add, language, lemmatize(self.web_button, 1, 4)
         self.layout.addWidget(self.word, 2, 2, 1, 1)
-        if self.settings.value("dict_source2", "<disabled>") != "<disabled>":
+        if self.settings.value("dict_source2", DISABLED) != DISABLED:
             self.layout.addWidget(self.definition, 2, 3, 4, 1)
             self.layout.addWidget(self.definition2, 2, 4, 4, 1)
         else:
@@ -602,109 +608,141 @@ class DictionaryWindow(QMainWindow):
         url = f"http://{self.settings.value('reader_host', '127.0.0.1', type=str)}:{self.settings.value('reader_port', '39285', type=str)}"
         QDesktopServices.openUrl(QUrl(url))
 
-    def handleFailedLookup(self, word):
-        self.definition.clearOnClickTextBlock = append_failed_lookup_blocks(self, word)
-            
+    def hasLookupFailure(self, defn_field):
+        return defn_field.partialLookupFailureBlock or defn_field.completeLookupFailureBlock
+
+    def setPartialLookupFailure(self, word, defn_field):
+        defn_field.partialLookupFailureBlock = \
+            set_partial_lookup_failure(word, defn_field, self.settings)
+        defn_field.completeLookupFailureBlock = None
+    def setCompleteLookupFailure(self, word, defn_field):
+        defn_field.completeLookupFailureBlock = \
+            set_complete_lookup_failure(word, defn_field, self.settings)
+        defn_field.partialLookupFailureBlock = None
+
+    def handlePartialLookupFailure(self, word, defn_field):
+        self.setPartialLookupFailure(word, defn_field)
+
+    def handleCompleteLookupFailure(self, word, defn_field):
+        defn_field.setReadOnly(True)
+        self.setCompleteLookupFailure(
+            word,
+            defn_field,
+        )
+        # Must call after `modify_defn_field`
         self.updateAnkiButtonState(True)
-        self.definition.setReadOnly(True)
 
-    def clearFailedLookup(self):
-        remove_failed_lookup_blocks(self)
+    def getOtherDefField(self, fieldEnum):
+        if (fieldEnum == Field.DEFINITION):
+            return self.definition2
+        if (fieldEnum == Field.DEFINITION2):
+            return self.definition
+
+    def clearAllLookupFailures(self):
+        def clearLookupFailures(defn_field):
+            if (defn_field.partialLookupFailureBlock
+                or defn_field.completeLookupFailureBlock):
+                reset_text_edit(defn_field)
+
+            defn_field.completeLookupFailureBlock = None
+            defn_field.partialLookupFailureBlock = None
+
+        clearLookupFailures(self.definition)
+        clearLookupFailures(self.definition2)
+
+    def clearCompleteFailure(self, fieldEnum):
         self.updateAnkiButtonState(False)
-        self.definition.setReadOnly(False)
 
-    def definitionEditPressed(self):
-        if (self.definition.clearOnClickTextBlock and
-                self.definition.textCursor().block() == self.definition.clearOnClickTextBlock):
-            self.clearFailedLookup()
+        defn_field = self.fieldEnumToField[fieldEnum]
+        self.clearPartialFailure(fieldEnum)
+        defn_field.completeLookupFailureBlock = None
+
+        other_defn_field = self.getOtherDefField(fieldEnum)
+        self.setPartialLookupFailure(self.getWord(), other_defn_field)
+
+    def clearPartialFailure(self, fieldEnum):
+        defn_field = self.fieldEnumToField[fieldEnum]
+
+        reset_text_edit(defn_field)
+        defn_field.setReadOnly(False)
+        defn_field.partialLookupFailureBlock = None
+
+    def defnFieldPressed(self, fieldEnum):
+        defn_field = self.fieldEnumToField[fieldEnum]
+
+        # Check if `completeLookupFailureBlock` was clicked
+        if (defn_field.completeLookupFailureBlock and
+            defn_field.completeLookupFailureBlock == defn_field.textCursor().block()):
+            self.clearCompleteFailure(fieldEnum)
+
+        # Check if `partialFailureBlock` was clicked
+        elif (defn_field.partialLookupFailureBlock and
+              defn_field.partialLookupFailureBlock == defn_field.textCursor().block()):
+            self.clearPartialFailure(fieldEnum)
+
+    def getWord(self):
+        return self.word.text()
 
     def textEditDoubleClicked(self, fieldEnum):
-        wordClicked = self.getCurrentWord(fieldEnum)
-        self.lookupClickedWord(wordClicked)
+        def get_clicked_word():
+            cursor = self.fieldEnumToField[fieldEnum].textCursor()
+            selected = cursor.selectedText()
+            word = str.strip(selected)
 
-    def getCurrentWord(self, fieldEnum):
-        cursor = self.fieldEnumToField[fieldEnum].textCursor()
-        selected = cursor.selectedText()
-        word = str.strip(selected or self.previousWord or self.word.text() or "")
+            return None if word == "" else word
 
-        return word
+        word_clicked = get_clicked_word()
+        if (word_clicked):
+            self.lookupSet(word_clicked)
 
-    def lookupClickedWord(self, word, use_lemmatize=True):
-        self.updateAnkiButtonState()
-        if word == "":
-            return
-        self.lookupSet(word, use_lemmatize)
+    def setDefinitionFieldState(self, dictname, defn_field: MyTextEdit, value: str):
+        defn_field.original = value.strip()
 
-    def setState(self, state):
-        self.word.setText(state['word'])
-        self.definition.original = state['definition']
-        display_mode1 = self.settings.value(
-            self.settings.value("dict_source", "Wiktionary (English)")
-            + "/display_mode",
+        display_mode = self.settings.value(
+            dictname + "/display_mode",
             "Markdown-HTML"
         )
-        skip_top1 = self.settings.value(
-            self.settings.value("dict_source", "Wiktionary (English)")
-            + "/skip_top",
+        skip_top = self.settings.value(
+            dictname + "/skip_top",
             0, type=int
         )
-        collapse_newlines1 = self.settings.value(
-            self.settings.value("dict_source", "Wiktionary (English)")
-            + "/collapse_newlines",
+        collapse_newlines = self.settings.value(
+            dictname + "/collapse_newlines",
             0, type=int
         )
-        if display_mode1 in ['Raw', 'Plaintext', 'Markdown']:
-            self.definition.setPlainText(
+
+        if display_mode in ['Raw', 'Plaintext', 'Markdown']:
+            defn_field.setPlainText(
                 process_definition(
-                    state['definition'].strip(),
-                    display_mode1,
-                    skip_top1,
-                    collapse_newlines1
+                    defn_field.original,
+                    display_mode,
+                    skip_top,
+                    collapse_newlines
                 )
             )
         else:
-            self.definition.setHtml(
+            defn_field.setHtml(
                 process_definition(
-                    state['definition'].strip(),
-                    display_mode1,
-                    skip_top1,
-                    collapse_newlines1
+                    defn_field.original,
+                    display_mode,
+                    skip_top,
+                    collapse_newlines
                 )
             )
 
-        if state.get('definition2'):
-            self.definition2.original = state['definition2']
-            display_mode2 = self.settings.value(
-                self.settings.value("dict_source2", "Wiktionary (English)")
-                + "/display_mode",
-                "Markdown-HTML"
-            )
-            skip_top2 = self.settings.value(
-                self.settings.value("dict_source2", "Wiktionary (English)")
-                + "/skip_top",
-                0, type=int
-            )
-            collapse_newlines2 = self.settings.value(
-                self.settings.value("dict_source2", "Wiktionary (English)")
-                + "/collapse_newlines",
-                0, type=int
-            )
-            if display_mode2 in ['Raw', 'Plaintext', 'Markdown']:
-                self.definition2.setPlainText(
-                    process_definition(
-                        state['definition2'].strip(),
-                        display_mode2,
-                        skip_top2,
-                        collapse_newlines2)
-                )
-            else:
-                self.definition2.setHtml(
-                    process_definition(
-                        state['definition2'].strip(),
-                        display_mode2,
-                        skip_top2,
-                        collapse_newlines2)
-                )
+    def setState(self, state):
+        self.word.setText(state['word'])
+
+        self.setDefinitionFieldState(
+            self.settings.value("dict_source", "Wiktionary (English)"),
+            self.definition,
+            state.definition
+        )
+        self.setDefinitionFieldState(
+            self.settings.value("dict_source2", "Wiktionary (English)"),
+            self.definition2,
+            state.definition2
+        )
 
         cursor = self.sentence.textCursor()
         cursor.clearSelection()
@@ -758,7 +796,6 @@ class DictionaryWindow(QMainWindow):
             copyobj = json.loads(text)
             target = copyobj['word']
             target = re.sub('[\\?\\.!«»…()\\[\\]]*', "", target)
-            self.previousWord = target
             sentence = preprocess_clipboard(copyobj['sentence'], lang)
             self.setSentence(sentence)
             self.setWord(target)
@@ -772,7 +809,7 @@ class DictionaryWindow(QMainWindow):
 
     
     def lookupSet(self, word, use_lemmatize=True):
-        self.clearFailedLookup()
+        self.clearAllLookupFailures()
         
         # Bold text
         sentence_text = self.sentence.toPlainText()
@@ -791,15 +828,55 @@ class DictionaryWindow(QMainWindow):
         word = re.sub('[«»…,()\\[\\]_]*', "", word)
         self.word.setText(word)
 
-        result = self.lookup(word, use_lemmatize)
-        if (result):
-            self.setState(result)
+        # Set definition fields
+
+        using_defn2 = self.settings.value("dict_source2") != DISABLED
+        defn_dict = self.settings.value("dict_source")
+        defn2_dict = self.settings.value("dict_source2")
+        def set_definition_or_partial_failure(
+            dictname, 
+            defn_field: MyTextEdit, 
+            defn: Optional[str]):
+            if defn:
+                self.setDefinitionFieldState(
+                    dictname,
+                    defn_field,
+                    defn
+                )
+            else:
+                self.handlePartialLookupFailure(word, defn_field)
+
+        definition = self.lookup(word, defn_dict, use_lemmatize)
+        definition2 = None
+
+        if not using_defn2:
+            if not definition:
+                self.handleCompleteLookupFailure(word, self.definition)
+            else: 
+                self.setDefinitionFieldState(
+                    defn_dict,
+                    self.definition,
+                    definition
+                )
         else:
-            self.handleFailedLookup(word)
+            definition2 = self.lookup(word, defn_dict, use_lemmatize)
+
+            if not definition and not definition2:
+                self.handleCompleteLookupFailure(word, self.definition)
+                self.handleCompleteLookupFailure(word, self.definition2)
+            else:
+                set_definition_or_partial_failure(defn_dict,
+                    self.definition,
+                    definition)
+                set_definition_or_partial_failure(defn2_dict,
+                    self.definition2,
+                    definition2)
+
+        # Set audio field
 
         QCoreApplication.processEvents()
         self.audio_path = None
-        if self.settings.value("audio_dict", "Forvo (all)") != "<disabled>":
+        if self.settings.value("audio_dict", "Forvo (all)") != DISABLED:
             try:
                 self.audios = getAudio(
                     word,
@@ -822,7 +899,12 @@ class DictionaryWindow(QMainWindow):
     def getLemGreedy(self):
         return self.settings.value("lem_greedily", False, type=bool)
 
-    def lookup(self, word, use_lemmatize=True, record=True):
+    def lookup(
+        self, 
+        word: str, 
+        dictname: str, 
+        use_lemmatize=True, 
+        record=True) -> Optional[str]:
         """
         Look up a word and return a dict with the lemmatized form (if enabled)
         and definition
@@ -835,9 +917,8 @@ class DictionaryWindow(QMainWindow):
         language = self.getLanguage()
         TL = language  # Handy synonym
         gtrans_lang = self.settings.value("gtrans_lang", "en")
-        dictname = self.settings.value("dict_source", "Wiktionary (English)")
-        freqname = self.settings.value("freq_source", "<disabled>")
-        if freqname != "<disabled>":
+        freqname = self.settings.value("freq_source", DISABLED)
+        if freqname != DISABLED:
             freq_found = False
             freq_display = self.settings.value("freq_display", "Rank")
             try:
@@ -859,6 +940,7 @@ class DictionaryWindow(QMainWindow):
         if record:
             self.status(
                 f"L: '{word}' in '{language}', lemma: {short_sign}, from {dictionaries.get(dictname, dictname)}")
+
         try:
             item = lookupin(
                 word,
@@ -876,44 +958,15 @@ class DictionaryWindow(QMainWindow):
                     lemmatize,
                     dictname,
                     True)
+
+            return item['definition']
+
         except Exception as e:
             if record:
                 self.status(str(e))
                 self.rec.recordLookup(
                     word, None, TL, lemmatize, dictname, False)
-
             return None
-
-        dict2name = self.settings.value("dict_source2", "<disabled>")
-        if dict2name == "<disabled>":
-            return item
-        try:
-            item2 = lookupin(
-                word,
-                language,
-                lemmatize,
-                lem_greedily,
-                dict2name,
-                gtrans_lang)
-            if record:
-                self.rec.recordLookup(
-                    word,
-                    item['definition'],
-                    TL,
-                    lemmatize,
-                    dict2name,
-                    True)
-        except Exception as e:
-            self.status("Dict-2 failed" + str(e))
-            if record:
-                self.rec.recordLookup(
-                    word, None, TL, lemmatize, dict2name, False)
-            self.definition2.clear()
-            return item
-        return {
-            "word": item['word'],
-            'definition': item['definition'],
-            'definition2': item2['definition']}
 
     def createNote(self):
         sentence = self.sentence.toPlainText().replace("\n", "<br>")
@@ -935,40 +988,43 @@ class DictionaryWindow(QMainWindow):
             },
             "tags": tags
         }
-        definition = self.process_defi_anki(
-            self.definition,
-            self.settings.value(
-                self.settings.value("dict_source1", "Wiktionary (English)")
-                + "/display_mode",
-                "Markdown-HTML"
-            )
-        )
-        content['fields'][self.settings.value('definition_field')] = definition
-        definition2 = None
-        if self.settings.value("dict_source2", "<disabled>") != '<disabled>':
-            try:
-                if self.settings.value(
-                    "definition2_field",
-                        "<disabled>") == "<disabled>":
-                    self.warn(
-                        "Aborted.\nYou must have field for Definition#2 in order to use two dictionaries.")
-                    return
-                definition2 = self.process_defi_anki(
-                    self.definition2,
+
+        def process_def_if_no_lookup_failure(dictname, defn_field: MyTextEdit, anki_field):
+            if self.hasLookupFailure(defn_field):
+                return None
+            else:
+                definition = self.process_defi_anki(
+                    defn_field,
                     self.settings.value(
-                        self.settings.value("dict_source2", "Wiktionary (English)")
+                        dictname
                         + "/display_mode",
                         "Markdown-HTML"
                     )
                 )
-                content['fields'][self.settings.value(
-                    'definition2_field')] = definition2
-            except Exception as e:
+                content['fields'][anki_field] = definition
+
+                return definition
+
+        definition = process_def_if_no_lookup_failure(
+            self.settings.value("dict_source", "Wiktionary (English)"),
+            self.definition,
+            self.settings.value('definition_field'))
+
+        definition2 = None
+        if self.settings.value("dict_source2", "Wiktionary (English)") != DISABLED:
+            if self.settings.value('definition2_field') == DISABLED:
+                self.warn(
+                    "Aborted.\nPlease set an anki field for Definition#2 when using two dictionaries.")
                 return
+            else:
+                definition2 = process_def_if_no_lookup_failure(
+                    self.settings.value("dict_source2", "Wiktionary (English)"),
+                    self.definition,
+                    self.settings.value('definition2_field'))
 
         if self.settings.value(
             "pronunciation_field",
-                "<disabled>") != '<disabled>' and self.audio_path:
+                DISABLED) != DISABLED and self.audio_path:
             content['audio'] = {
                 "path": self.audio_path,
                 "filename": os.path.basename(self.audio_path),
@@ -977,7 +1033,7 @@ class DictionaryWindow(QMainWindow):
                 ]
             }
             self.audio_selector.clear()
-        if self.settings.value("image_field", "<disabled>") != '<disabled>' and self.image_path:
+        if self.settings.value("image_field", DISABLED) != DISABLED and self.image_path:
             content['picture'] = {
                 "path": self.image_path,
                 "filename": os.path.basename(self.image_path),

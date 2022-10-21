@@ -213,7 +213,7 @@ class KindleImporter(QDialog):
                 self.definition2s.append(item.get('definition2', ""))
 
                 audio_path = ""
-                if self.settings.value("audio_dict", "Forvo (all)") != "<disabled>":
+                if self.settings.value("audio_dict", "Forvo (all)") != DISABLED:
                     try:
                         audios = getAudio(
                                 word,
@@ -260,10 +260,10 @@ class KindleImporter(QDialog):
                 definition = definition.replace("\n", "<br>")
                 content['fields'][self.parent.settings.value(
                     'definition_field')] = definition
-                if self.settings.value("dict_source2", "<disabled>") != '<disabled>':
+                if self.settings.value("dict_source2", DISABLED) != DISABLED:
                     definition2 = definition2.replace("\n", "<br>")
                     content['fields'][self.parent.settings.value('definition2_field')] = definition2
-                if self.settings.value("audio_dict", "<disabled>") != '<disabled>' and audio_path:
+                if self.settings.value("audio_dict", DISABLED) != DISABLED and audio_path:
                     content['audio'] = {}
                     if audio_path.startswith("https://") or audio_path.startswith("http://"):
                         content['audio']['url'] = audio_path

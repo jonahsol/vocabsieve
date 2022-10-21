@@ -5,7 +5,7 @@ from shutil import rmtree
 from .tools import *
 from .dictionary import *
 from .dictmanager import *
-
+from .constants import DISABLED
 
 class SettingsDialog(QDialog):
     def __init__(self, parent, ):
@@ -19,8 +19,6 @@ class SettingsDialog(QDialog):
         self.setupAutosave()
         self.setupProcessing()
         self.deactivateProcessing()
-        self.twodictmode = self.settings.value(
-            "dict_source2", "<disabled>") != "<disabled>"
 
     def initWidgets(self):
         self.bar = QStatusBar()
@@ -446,12 +444,12 @@ class SettingsDialog(QDialog):
             self.register_config_handler(
                 self.definition2_field,
                 'definition2_field',
-                '<disabled>')
+                DISABLED)
             self.register_config_handler(
                 self.pronunciation_field,
                 'pronunciation_field',
-                "<disabled>")
-            self.register_config_handler(self.image_field, 'image_field', "<disabled>")
+                DISABLED)
+            self.register_config_handler(self.image_field, 'image_field', DISABLED)
 
         self.loadDictionaries()
         self.loadAudioDictionaries()
@@ -477,10 +475,10 @@ class SettingsDialog(QDialog):
             'dict_source',
             'Wiktionary (English)')
         self.register_config_handler(
-            self.dict_source2, 'dict_source2', '<disabled>')
+            self.dict_source2, 'dict_source2', DISABLED)
         self.register_config_handler(self.audio_dict, 'audio_dict', 'Forvo (all)')
         self.register_config_handler(
-            self.freq_source, 'freq_source', '<disabled>')
+            self.freq_source, 'freq_source', DISABLED)
         self.register_config_handler(
             self.web_preset,
             'web_preset',
@@ -558,7 +556,7 @@ class SettingsDialog(QDialog):
         self.dict_source.clear()
         self.dict_source2.blockSignals(True)
         self.dict_source2.clear()
-        self.dict_source2.addItem("<disabled>")
+        self.dict_source2.addItem(DISABLED)
         self.postproc_selector.blockSignals(True)
         self.postproc_selector.clear()
         dicts = getDictsForLang(
@@ -573,7 +571,7 @@ class SettingsDialog(QDialog):
                 'Wiktionary (English)'))
         self.dict_source2.setCurrentText(
             self.settings.value(
-                'dict_source2', '<disabled>'))
+                'dict_source2', DISABLED))
         self.dict_source.blockSignals(False)
         self.dict_source2.blockSignals(False)
         self.postproc_selector.blockSignals(False)
@@ -584,12 +582,12 @@ class SettingsDialog(QDialog):
             langcodes.inverse[self.target_language.currentText()], custom_dicts)
         self.freq_source.blockSignals(True)
         self.freq_source.clear()
-        self.freq_source.addItem("<disabled>")
+        self.freq_source.addItem(DISABLED)
         for item in sources:
             self.freq_source.addItem(item)
         self.freq_source.setCurrentText(
             self.settings.value(
-                "freq_source", "<disabled>"))
+                "freq_source", DISABLED))
         self.freq_source.blockSignals(False)
 
     def loadUrl(self):
@@ -663,22 +661,22 @@ class SettingsDialog(QDialog):
         self.word_field.addItems(fields)
 
         self.frequency_field.clear()
-        self.frequency_field.addItem("<disabled>")
+        self.frequency_field.addItem(DISABLED)
         self.frequency_field.addItems(fields)
 
         self.definition_field.clear()
         self.definition_field.addItems(fields)
 
         self.definition2_field.clear()
-        self.definition2_field.addItem("<disabled>")
+        self.definition2_field.addItem(DISABLED)
         self.definition2_field.addItems(fields)
 
         self.pronunciation_field.clear()
-        self.pronunciation_field.addItem("<disabled>")
+        self.pronunciation_field.addItem(DISABLED)
         self.pronunciation_field.addItems(fields)
 
         self.image_field.clear()
-        self.image_field.addItem("<disabled>")
+        self.image_field.addItem(DISABLED)
         self.image_field.addItems(fields)
 
         self.sentence_field.setCurrentText(self.settings.value("sentence_field"))
@@ -724,7 +722,7 @@ class SettingsDialog(QDialog):
         msg.exec()
 
     def changeMainLayout(self):
-        if self.dict_source2.currentText() != "<disabled>":
+        if self.dict_source2.currentText() != DISABLED:
             # This means user has changed from one source to two source mode,
             # need to redraw main window
             if self.settings.value("orientation", "Vertical") == "Vertical":
@@ -760,18 +758,16 @@ class SettingsDialog(QDialog):
             widget,
             key,
             default,
-            code_translate=False,
-            no_initial_update=False):
-        name = widget.objectName()
-        def update(v): return self.settings.setValue(key, v)
+            code_translate=False):
 
+        def update(v): return self.settings.setValue(key, v)
         def update_map(v): return self.settings.setValue(
             key, langcodes.inverse[v])
+
         if type(widget) == QCheckBox:
             widget.setChecked(self.settings.value(key, default, type=bool))
             widget.clicked.connect(update)
-            if not no_initial_update:
-                update(widget.isChecked())
+            update(widget.isChecked())
         if type(widget) == QLineEdit:
             widget.setText(self.settings.value(key, default))
             widget.textChanged.connect(update)
