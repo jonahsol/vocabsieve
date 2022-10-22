@@ -199,7 +199,7 @@ class KindleImporter(QDialog):
             word = re.sub('[\\?\\.!«»…,()\\[\\]]*', "", self.lookup_terms[i])
         
             if self.sents[i]:
-                item = self.parent.lookup(word, record=False)
+                item = self.parent.lookup(word)
                 if not item['definition'].startswith("<b>Definition for"):
                     count += 1
                     self.words.append(item['word'])

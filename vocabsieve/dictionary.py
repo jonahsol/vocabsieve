@@ -116,7 +116,7 @@ def lem_word(word, language, greedy=False):
         return word
 
 
-def wiktionary(word, language) -> Optional[dict]:
+def wiktionary(word, language) -> Optional[List[str]]:
     "Get definitions from Wiktionary"
     try:
         res = requests.get(
@@ -139,15 +139,16 @@ def wiktionary(word, language) -> Optional[dict]:
 
         meaning_item = {"pos": item['partOfSpeech'], "meaning": meanings}
         definitions.append(meaning_item)
-    return {"word": word, "definition": definitions}
+
+    return definitions
 
 
-def googletranslate(word, language, gtrans_lang, gtrans_api):
+def googletranslate(word, language, gtrans_lang, gtrans_api) -> Optional[str]:
     "Google translation, through the googletrans python library"
     url = f"{gtrans_api}/api/v1/{language}/{gtrans_lang}/{quote(word)}"
     res = requests.get(url)
     if res.status_code == 200:
-        return {"word": word, "definition": res.json()['translation']}
+        return res.json()['translation']
     else:
         return
 
@@ -164,15 +165,13 @@ def getAudio(word, language, dictionary="Forvo (all)", custom_dicts=[]) -> Optio
         for d in custom_dicts:
             if d['lang'] == language and d['type'] == 'audiolib':
                 try:
-                    data = lookupin(
+                    lookup_res = lookupin(
                         word.lower(),
                         language,
-                        lemmatize=False,
                         dictionary=d['name'])
-                    if data['definition']:
-                        data['definition'] = json.loads(data['definition'])
+                    if lookup_res:
                         rootpath = d['path']
-                        for item in data['definition']:
+                        for item in json.loads(lookup_res):
                             qualified_name = d['name'] + \
                                 ":" + os.path.splitext(item)[0]
                             result[qualified_name] = os.path.join(
@@ -182,65 +181,55 @@ def getAudio(word, language, dictionary="Forvo (all)", custom_dicts=[]) -> Optio
         return result
     else:
         # We are using a local dictionary here.
-        data = lookupin(
+        lookup_res = lookupin(
             word.lower(),
             language,
-            lemmatize=False,
             dictionary=dictionary)
-        data['definition'] = json.loads(data['definition'])
         for d in custom_dicts:
             if d['name'] == dictionary and d['lang'] == language and d['type'] == 'audiolib':
                 rootpath = d['path']
                 break
         result = {}
-        for item in data['definition']:
+        for item in json.loads(lookup_res):
             qualified_name = dictionary + ":" + os.path.splitext(item)[0]
             result[qualified_name] = os.path.join(rootpath, item)
         return result
-    return
 
+def apply_lemmatization(
+        word,
+        language,
+        greedy_lemmatize=False):
+    if language == 'ru':
+        word = removeAccents(word)
+    word = lem_word(word, language, greedy_lemmatize)
+
+    return word
 
 def lookupin(
         word,
+        # @language is code
         language,
-        lemmatize=True,
-        greedy_lemmatize=False,
         dictionary="Wiktionary (English)",
         gtrans_lang="en",
-        gtrans_api="https://lingva.ml"):
-    # Remove any punctuation other than a hyphen
-    # @language is code
-    IS_UPPER = word[0].isupper()
+        gtrans_api="https://lingva.ml") -> Optional[str]:
     if language == 'ru':
+        # Remove any punctuation other than a hyphen
         word = removeAccents(word)
-    if lemmatize:
-        word = lem_word(word, language, greedy_lemmatize)
     # The lemmatizer would always turn words lowercase, which can cause
     # lookups to fail if not recovered.
-    candidates = [word, word.capitalize()] if IS_UPPER else [word]
+    candidates = [word, word.capitalize()] if word[0].isupper() else [word]
     for word in candidates:
         try:
             if dictionary == "Wiktionary (English)":
-                item = wiktionary(word, language)
-                item['definition'] = fmt_result(item['definition'])
-                return item
+                return fmt_result(wiktionary(word, language))
             elif dictionary == "Google Translate":
                 return googletranslate(word, language, gtrans_lang, gtrans_api)
             else:
-                return {
-                    "word": word,
-                    "definition": dictdb.define(
-                        word,
-                        language,
-                        dictionary)}
+                return dictdb.define(word, language, dictionary)
         except BaseException:
             pass
-    raise Exception("Word not found")
 
-
-def getFreq(word, language, lemfreq, dictionary) -> (int, int):
-    if lemfreq:
-        word = lem_word(word, language)
+def getFreq(word, language, dictionary) -> (int, int):
     freq = dictdb.define(word.lower(), language, dictionary)
     max_freq = dictdb.countEntriesDict(dictionary)
     return int(freq), int(max_freq)

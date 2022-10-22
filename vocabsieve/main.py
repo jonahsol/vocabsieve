@@ -67,13 +67,11 @@ class Field(Enum):
 class Event(Enum):
     DOUBLECLICK = auto()
     MOUSEPRESS = auto()
+    SELECTION = auto()
 
 events = {}
-events[Event.DOUBLECLICK] = {
-    fieldEnum: Event.DOUBLECLICK.name + fieldEnum.name for fieldEnum in Field }
-events[Event.MOUSEPRESS] = {
-    fieldEnum: Event.MOUSEPRESS.name + fieldEnum.name for fieldEnum in Field }
-
+for ev in Event:
+    events[ev] = { fieldEnum: ev.name + fieldEnum.name for fieldEnum in Field }
 
 @functools.lru_cache()
 class GlobalObject(QObject):
@@ -101,6 +99,8 @@ class MyTextEdit(QTextEdit):
         self.fieldEnum = fieldEnum
         self.partialLookupFailureBlock = None
         self.completeLookupFailureBlock = None
+
+        self.selectionChanged.connect(self.handleSelectionChanged)
     
     @pyqtSlot()
     def mouseDoubleClickEvent(self, e):
@@ -114,19 +114,28 @@ class MyTextEdit(QTextEdit):
         super().mousePressEvent(e)
         GlobalObject().dispatchEvent(events[Event.MOUSEPRESS][self.fieldEnum])
 
+    @pyqtSlot()
+    def handleSelectionChanged(self):
+        GlobalObject().dispatchEvent(events[Event.SELECTION][self.fieldEnum])
+
 
 class DictionaryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        # State
+        self.audio_path = ""
+        self.prev_clipboard = ""
+        self.image_path = None 
+        self.rawWordLookup = None
+
+        # App
         self.setWindowTitle(getAppTitle())
         self.setFocusPolicy(Qt.StrongFocus)
         self.widget = QWidget()
         self.settings = QSettings()
         self.rec = Record()
         self.setCentralWidget(self.widget)
-        self.audio_path = ""
-        self.prev_clipboard = ""
-        self.image_path = None 
         self.scaleFont()
         self.initWidgets()
         if self.settings.value("orientation", "Vertical") == "Vertical":
@@ -146,17 +155,24 @@ class DictionaryWindow(QMainWindow):
         # Sentence listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.SENTENCE],
                                         lambda: self.textEditDoubleClicked(Field.SENTENCE))
+        GlobalObject().addEventListener(events[Event.SELECTION][Field.SENTENCE],
+                                        lambda: self.selectionMade(Field.SENTENCE))
         # Definition listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION],
                                         lambda: self.textEditDoubleClicked(Field.DEFINITION))
         GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION],
                                         lambda: self.defnFieldPressed(Field.DEFINITION))
+        GlobalObject().addEventListener(events[Event.SELECTION][Field.DEFINITION],
+                                        lambda: self.selectionMade(Field.DEFINITION))
         # Definition 2 listeners
         GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION2],
                                         lambda: self.textEditDoubleClicked(Field.DEFINITION2))
         GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION2],
                                         lambda: self.defnFieldPressed(Field.DEFINITION2))
+        GlobalObject().addEventListener(events[Event.SELECTION][Field.DEFINITION2],
+                                        lambda: self.selectionMade(Field.DEFINITION2))
 
+        # Connect to OS clipboard
         if self.settings.value("primary", False, type=bool)\
                 and QClipboard.supportsSelection(QApplication.clipboard()):
             QApplication.clipboard().selectionChanged.connect(
@@ -370,9 +386,10 @@ class DictionaryWindow(QMainWindow):
 
 
     def setupButtons(self):
-        self.lookup_button.clicked.connect(lambda: self.lookupClicked(True))
+        self.lookup_button.clicked.connect(
+            lambda: self.lookupCurrentSelectionOrPrevWord(True))
         self.lookup_exact_button.clicked.connect(
-            lambda: self.lookupClicked(False))
+            lambda: self.lookupCurrentSelectionOrPrevWord(False))
 
         self.web_button.clicked.connect(self.onWebButton)
 
@@ -683,17 +700,15 @@ class DictionaryWindow(QMainWindow):
     def getWord(self):
         return self.word.text()
 
+    def selectionMade(self, fieldEnum: Field):
+        self.selectedText = getSelectedText(self.fieldEnumToField[fieldEnum])
     def textEditDoubleClicked(self, fieldEnum):
-        def get_clicked_word():
-            cursor = self.fieldEnumToField[fieldEnum].textCursor()
-            selected = cursor.selectedText()
-            word = str.strip(selected)
+        self.lookupSet(self.selectedText)
 
-            return None if word == "" else word
-
-        word_clicked = get_clicked_word()
-        if (word_clicked):
-            self.lookupSet(word_clicked)
+    def lookupCurrentSelectionOrPrevWord(self, use_lemmatize: bool):
+        if hasattr(self, "selectedText") and self.selectedText != None:
+            self.lookupSet(self.selectedText, use_lemmatize)
+        else: self.lookupSet(self.rawWordLookup, use_lemmatize)
 
     def setDefinitionFieldState(self, dictname, defn_field: MyTextEdit, value: str):
         defn_field.original = value.strip()
@@ -729,24 +744,6 @@ class DictionaryWindow(QMainWindow):
                     collapse_newlines
                 )
             )
-
-    def setState(self, state):
-        self.word.setText(state['word'])
-
-        self.setDefinitionFieldState(
-            self.settings.value("dict_source", "Wiktionary (English)"),
-            self.definition,
-            state.definition
-        )
-        self.setDefinitionFieldState(
-            self.settings.value("dict_source2", "Wiktionary (English)"),
-            self.definition2,
-            state.definition2
-        )
-
-        cursor = self.sentence.textCursor()
-        cursor.clearSelection()
-        self.sentence.setTextCursor(cursor)
 
     def setSentence(self, content):
         self.sentence.setText(str.strip(content))
@@ -808,7 +805,14 @@ class DictionaryWindow(QMainWindow):
             self.setSentence(preprocess_clipboard(text, lang))
 
     
-    def lookupSet(self, word, use_lemmatize=True):
+    def lookupSet(self, word: str, use_lemmatize=True):
+        """ Lookup @word and modify GUI state accordingly.
+        """
+        lemmatize_word = use_lemmatize and self.getLemmatize()
+
+        # Save the unlemmatized word so that it can be used by `lookup_exact_button`
+        self.rawWordLookup = word
+        # Clear any lookup failures from the last lookup
         self.clearAllLookupFailures()
         
         # Bold text
@@ -819,16 +823,24 @@ class DictionaryWindow(QMainWindow):
                 word, 
                 without_bold, 
                 self.getLanguage(), 
-                use_lemmatize, 
+                lemmatize_word, 
                 self.getLemGreedy())
         self.sentence.setText(sentence_text)
 
         QCoreApplication.processEvents()
 
+        # Lemmatize word and set word field
         word = re.sub('[«»…,()\\[\\]_]*', "", word)
+        if lemmatize_word:
+            word = apply_lemmatization(word, self.getLanguage(), self.getLemGreedy())
         self.word.setText(word)
 
-        # Set definition fields
+        # Set frequency fields
+        freqname = self.settings.value("freq_source", DISABLED)
+        if freqname != DISABLED:
+            self.setFreq(word)
+
+        # Look up the word's definition and set definition fields
 
         using_defn2 = self.settings.value("dict_source2") != DISABLED
         defn_dict = self.settings.value("dict_source")
@@ -846,7 +858,8 @@ class DictionaryWindow(QMainWindow):
             else:
                 self.handlePartialLookupFailure(word, defn_field)
 
-        definition = self.lookup(word, defn_dict, use_lemmatize)
+        definition = self.lookup(word, defn_dict)
+        self.recordLookupRes(word, lemmatize_word, definition, defn_dict)
         definition2 = None
 
         if not using_defn2:
@@ -859,16 +872,19 @@ class DictionaryWindow(QMainWindow):
                     definition
                 )
         else:
-            definition2 = self.lookup(word, defn_dict, use_lemmatize)
+            definition2 = self.lookup(word, defn2_dict)
+            self.recordLookupRes(word, lemmatize_word, definition2, defn2_dict)
 
             if not definition and not definition2:
                 self.handleCompleteLookupFailure(word, self.definition)
                 self.handleCompleteLookupFailure(word, self.definition2)
             else:
-                set_definition_or_partial_failure(defn_dict,
+                set_definition_or_partial_failure(
+                    defn_dict,
                     self.definition,
                     definition)
-                set_definition_or_partial_failure(defn2_dict,
+                set_definition_or_partial_failure(
+                    defn2_dict,
                     self.definition2,
                     definition2)
 
@@ -898,75 +914,68 @@ class DictionaryWindow(QMainWindow):
         return self.settings.value("target_language", "en")
     def getLemGreedy(self):
         return self.settings.value("lem_greedily", False, type=bool)
+    def getLemmatize(self):
+        return self.settings.value("lemmatization", True, type=bool)
+
+    def setFreq(self, word: str):
+        freq_found = False
+        freq_display = self.settings.value("freq_display", "Rank")
+        freqname = self.settings.value("freq_source")
+        lemfreq = self.settings.value("lemfreq", True, type=bool)
+        try:
+            word_copy = str(word)
+            if lemfreq:
+                word_copy = apply_lemmatization(
+                    word_copy, 
+                    self.getLanguage(), 
+                    self.getLemGreedy())
+            freq, max_freq = getFreq(word_copy, self.getLanguage(), freqname)
+            freq_found = True
+        except TypeError:
+            pass
+
+        if freq_found:
+            if freq_display == "Rank":
+                self.freq_display.setText(f'{str(freq)}/{str(max_freq)}')
+            elif freq_display == "Stars":
+                self.freq_display.setText(freq_to_stars(freq, lemfreq))
+        else:
+            if freq_display == "Rank":
+                self.freq_display.setText('-1')
+            elif freq_display == "Stars":
+                self.freq_display.setText(freq_to_stars(1e6, lemfreq))
+
+    def recordLookupRes(
+        self, 
+        word: str, 
+        word_lemmatized: bool, 
+        wordLookupRes: Optional[str], 
+        dictname):
+        
+        if not wordLookupRes:
+            self.status("Word not found")
+
+        self.rec.recordLookup(
+            word,
+            wordLookupRes,
+            self.getLanguage(),
+            word_lemmatized,
+            dictname,
+            wordLookupRes != None)
 
     def lookup(
         self, 
         word: str, 
-        dictname: str, 
-        use_lemmatize=True, 
-        record=True) -> Optional[str]:
+        dictname: str) -> Optional[str]:
         """
-        Look up a word and return a dict with the lemmatized form (if enabled)
-        and definition
+        Call `lookupin()` for @word in @dictname.
         """
-        lemmatize = use_lemmatize and self.settings.value(
-            "lemmatization", True, type=bool)
-        lem_greedily = self.getLemGreedy()
-        lemfreq = self.settings.value("lemfreq", True, type=bool)
-        short_sign = "Y" if lemmatize else "N"
-        language = self.getLanguage()
-        TL = language  # Handy synonym
-        gtrans_lang = self.settings.value("gtrans_lang", "en")
-        freqname = self.settings.value("freq_source", DISABLED)
-        if freqname != DISABLED:
-            freq_found = False
-            freq_display = self.settings.value("freq_display", "Rank")
-            try:
-                freq, max_freq = getFreq(word, language, lemfreq, freqname)
-                freq_found = True
-            except TypeError:
-                pass
-
-            if freq_found:
-                if freq_display == "Rank":
-                    self.freq_display.setText(f'{str(freq)}/{str(max_freq)}')
-                elif freq_display == "Stars":
-                    self.freq_display.setText(freq_to_stars(freq, lemfreq))
-            else:
-                if freq_display == "Rank":
-                    self.freq_display.setText('-1')
-                elif freq_display == "Stars":
-                    self.freq_display.setText(freq_to_stars(1e6, lemfreq))
-        if record:
-            self.status(
-                f"L: '{word}' in '{language}', lemma: {short_sign}, from {dictionaries.get(dictname, dictname)}")
-
-        try:
-            item = lookupin(
-                word,
-                language,
-                lemmatize,
-                lem_greedily,
-                dictname,
-                gtrans_lang,
-                self.settings.value("gtrans_api", "https://lingva.ml"))
-            if record:
-                self.rec.recordLookup(
-                    word,
-                    item['definition'],
-                    TL,
-                    lemmatize,
-                    dictname,
-                    True)
-
-            return item['definition']
-
-        except Exception as e:
-            if record:
-                self.status(str(e))
-                self.rec.recordLookup(
-                    word, None, TL, lemmatize, dictname, False)
-            return None
+        return lookupin(
+            word,
+            self.getLanguage(),
+            dictname,
+            self.settings.value("gtrans_lang", "en"),
+            self.settings.value("gtrans_api", "https://lingva.ml"))
 
     def createNote(self):
         sentence = self.sentence.toPlainText().replace("\n", "<br>")
