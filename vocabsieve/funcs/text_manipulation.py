@@ -1,6 +1,6 @@
 from nltk.tokenize import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
-from .dictionary import lem_word
+from dictionary.dictionary import lem_word
 import re
 
 tokenize = word_tokenize

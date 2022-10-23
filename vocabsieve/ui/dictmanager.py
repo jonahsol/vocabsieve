@@ -1,18 +1,17 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from .dictionary import *
-from .tools import *
-from .dictformats import supported_dict_formats, dictinfo
-from bidict import bidict
+from dictionary.dictionary import *
+from dictionary.funcs import *
+from dictionary.dictformats import supported_dict_formats, dictinfo
 import json
-import os
-
+from ui.status_bar import StatusBar
+from settings import settings
+from ui.warn import warn
 
 class DictManager(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.settings = parent.settings
         self.setWindowTitle("Manage Local Dictionaries")
         self.parent = parent
         self.resize(500, 400)
@@ -42,7 +41,7 @@ improve performance during lookups. The files must be in their original location
 to be reimported, otherwise this operation will fail.\
         """)
         self.rebuild.clicked.connect(self.rebuildDB)
-        self.bar = QStatusBar()
+        self.statusBar = StatusBar()
 
     def setupWidgets(self):
         self.layout = QVBoxLayout(self)
@@ -57,16 +56,16 @@ to be reimported, otherwise this operation will fail.\
         self.layout.addWidget(self.add_audio)
         self.layout.addWidget(self.remove)
         self.layout.addWidget(self.rebuild)
-        self.layout.addWidget(self.bar)
+        self.layout.addWidget(self.statusBar)
 
     def rebuildDB(self):
         start = time.time()
-        dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        dicts = json.loads(settings.value("custom_dicts"))
         dictdb.purge()
         n_dicts = len(dicts)
         for (i, item) in enumerate(dicts):
             try:
-                self.status(f"Rebuilding database: dictionary ({i+1}/{n_dicts})"
+                self.statusBar.status(f"Rebuilding database: dictionary ({i+1}/{n_dicts})"
                             ".. this can take a while.")
                 QCoreApplication.processEvents()
                 dictimport(item['path'], item['type'], item['lang'], item['name'])
@@ -103,17 +102,17 @@ to be reimported, otherwise this operation will fail.\
 
     def onRemove(self):
         index = self.tview.indexFromItem(self.tview.currentItem())
-        dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        dicts = json.loads(settings.value("custom_dicts"))
         if dicts == []:
             return
         dictdelete(dicts[index.row()]['name'])
         del dicts[index.row()]
-        self.settings.setValue("custom_dicts", json.dumps(dicts))
+        settings.setValue("custom_dicts", json.dumps(dicts))
         self.refresh()
         self.showStats()
 
     def refresh(self):
-        dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        dicts = json.loads(settings.value("custom_dicts"))
         self.tview.clear()
         for item in dicts:
             treeitem = QTreeWidgetItem(
@@ -128,12 +127,6 @@ to be reimported, otherwise this operation will fail.\
         for i in range(4):
             self.tview.resizeColumnToContents(i)
 
-    def status(self, msg, t=4000):
-        self.bar.showMessage(self.time() + " " + msg, t)
-
-    def time(self):
-        return QDateTime.currentDateTime().toString('[hh:mm:ss]')
-
     def closeEvent(self, event):
         self.parent.loadDictionaries()
         self.parent.loadFreqSources()
@@ -143,14 +136,16 @@ to be reimported, otherwise this operation will fail.\
     def showStats(self):
         n_dicts = dictdb.countDicts()
         n_entries = dictdb.countEntries()
-        self.status(f"Total: {n_dicts} dictionaries, {n_entries} entries.", t=0)
         # t=0 means it will not disappear
+        self.statusBar.status(f"Total: {n_dicts} dictionaries, {n_entries} entries.", t=0)
+
+    def status(self, msg):
+        self.statusBar.status(msg)
 
 
 class AddDictDialog(QDialog):
     def __init__(self, parent, fname, audiolib=False):
         super().__init__(parent)
-        self.settings = parent.settings
         self.parent = parent
         self.resize(250, 150)
         self.fname = fname
@@ -162,10 +157,10 @@ class AddDictDialog(QDialog):
             try:
                 dictinfo(self.fname)
             except NotImplementedError:
-                self.warn("Unsupported format")
+                warn("Unsupported format")
                 self.close()
             except IOError:
-                self.warn("Failed to read file")
+                warn("Failed to read file")
                 self.close()
 
         self.parent.status("Reading " + self.fname)
@@ -186,7 +181,7 @@ class AddDictDialog(QDialog):
         self.lang = QComboBox()
         self.lang.addItems(langs_supported.values())
         self.lang.setCurrentText(
-            langcodes[self.settings.value("target_language")])
+            langcodes[settings.get("target_language")])
         self.commit_button = QPushButton("Add")
         self.commit_button.clicked.connect(self.commit)
 
@@ -200,7 +195,7 @@ class AddDictDialog(QDialog):
     def commit(self):
         "Give it a name, then add dictionary"
         name = self.name.text()
-        dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        dicts = json.loads(settings.get("custom_dicts"))
         lang = langcodes.inverse[self.lang.currentText()]
         existing_names = getDictsForLang(lang, dicts)\
             + getFreqlistsForLang(lang, dicts)\
@@ -226,15 +221,10 @@ class AddDictDialog(QDialog):
                       "path": self.path,
                       "lang": langcodes.inverse[self.lang.currentText()],
                       })
-        self.settings.setValue("custom_dicts", json.dumps(dicts))
+        settings.setValue("custom_dicts", json.dumps(dicts))
         self.parent.status(f"Importing {self.name.text()} to database..")
         self.parent.refresh()
         self.parent.status("Importing done.")
         self.parent.showStats()
         self.close()
 
-    def warn(self, text):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
-        msg.setText(text)
-        msg.exec()

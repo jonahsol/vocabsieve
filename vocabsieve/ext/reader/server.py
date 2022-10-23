@@ -8,6 +8,8 @@ import re
 from .utils import *
 from PyQt5.QtCore import QStandardPaths, QCoreApplication, QObject
 from pathlib import Path
+from data.datapath import mk_data_dir, get_data_abs_path
+
 # The following import is to avoid cxfreeze error
 import sqlalchemy.sql.default_comparator
 DEBUGGING = None
@@ -19,17 +21,15 @@ else:
     QCoreApplication.setApplicationName("VocabSieve")
 QCoreApplication.setOrganizationName("FreeLanguageTools")
 
-datapath = QStandardPaths.writableLocation(QStandardPaths.DataLocation)
-Path(datapath).mkdir(parents=True, exist_ok=True)
-UPLOAD_FOLDER = os.path.join(datapath, "uploads")
-Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
+UPLOAD_FOLDER = get_data_abs_path("uploads")
+mk_data_dir(UPLOAD_FOLDER)
 
 
 def create_flaskapp():
     app = Flask(__name__)
     app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
     app.config['SECRET_KEY'] = "abc"
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{datapath}/reader.db"
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{get_data_abs_path()}/reader.db"
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     return app

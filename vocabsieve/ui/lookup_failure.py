@@ -1,8 +1,4 @@
-from PyQt5.QtGui import QTextCursor, QTextCharFormat, QCursor
-from PyQt5 import QtGui, QtCore
-from PyQt5.QtGui import QCursor
-from PyQt5.QtWidgets import QTextEdit
-from typing import Optional
+from PyQt5.QtGui import QTextCursor
 
 def set_complete_lookup_failure(word, defn_field, settings):
     def create_clear_text_block(cursor):
@@ -41,22 +37,3 @@ def _set_lookup_failure(defn_field, word, settings, create_clear_text_block):
         " probably just does not have this word listed.")
 
     return clear_text_block
-
-def reset_text_edit(text_edit):
-    text_edit.clear()
-    _reset_text_cursor_format(text_edit)
-
-# textEdit: QTextEdit
-def _reset_text_cursor_format(text_edit):
-    cursor = text_edit.textCursor()
-    cursor.setCharFormat(QTextCharFormat())
-    text_edit.setTextCursor(
-        cursor
-    )
-
-def getSelectedText(text_edit: QTextEdit) -> Optional[str]:
-    selected = text_edit.textCursor().selectedText()
-    text = str.strip(selected)
-
-    return None if text == "" else text
-

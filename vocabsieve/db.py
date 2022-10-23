@@ -1,15 +1,13 @@
 import sqlite3
-from PyQt5.QtCore import QStandardPaths, QCoreApplication
 from os import path
-from pathlib import Path
 import time
 from bidict import bidict
 import pycountry
 import re
-from datetime import datetime, timedelta
-datapath = QStandardPaths.writableLocation(QStandardPaths.DataLocation)
-Path(datapath).mkdir(parents=True, exist_ok=True)
-print(datapath)
+from datetime import datetime
+from functools import lru_cache
+from data.datapath import get_data_abs_path 
+
 # Currently, all languages with two letter codes can be set
 langcodes = bidict(
     dict(
@@ -31,13 +29,11 @@ langcodes['hmn'] = "Hmong"
 dictionaries = bidict({"Wiktionary (English)": "wikt-en",
                        "Google Translate": "gtrans"})
 
-
+@lru_cache(maxsize=1)
 class Record():
     def __init__(self):
         self.conn = sqlite3.connect(
-            path.join(
-                datapath,
-                "records.db"),
+            get_data_abs_path("records.db"),
             check_same_thread=False)
         self.c = self.conn.cursor()
         self.createTables()
@@ -219,9 +215,7 @@ class Record():
 class LocalDictionary():
     def __init__(self):
         self.conn = sqlite3.connect(
-            path.join(
-                datapath,
-                "dict.db"),
+            get_data_abs_path("dict.db"),
             check_same_thread=False)
         self.c = self.conn.cursor()
         self.createTables()
@@ -303,3 +297,5 @@ class LocalDictionary():
         DROP TABLE IF EXISTS dictionary
         """)
         self.createTables()
+
+rec = Record()

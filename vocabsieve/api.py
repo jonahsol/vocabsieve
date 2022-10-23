@@ -1,7 +1,7 @@
 from flask import Flask, request
 from PyQt5.QtCore import *
-from .dictionary import *
-from .db import Record
+from dictionary.dictionary import *
+from db import Record
 import logging
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -23,7 +23,7 @@ class LanguageServer(QObject):
     def start_api(self):
         """ Main server application """
         self.app = Flask(__name__)
-        self.settings = QSettings()
+        settings = QSettings()
 
         @self.app.route("/healthcheck")
         def healthcheck():
@@ -41,9 +41,9 @@ class LanguageServer(QObject):
         @self.app.route("/translate", methods=["POST"])
         def translate():
             lang = request.args.get(
-                "src") or self.settings.value("target_language")
+                "src") or settings.value("target_language")
             gtrans_lang = request.args.get(
-                "dst") or self.settings.value("gtrans_lang")
+                "dst") or settings.value("gtrans_lang")
             return {
                 "translation": googletranslate(
                     request.json.get("text"),
@@ -70,7 +70,7 @@ class LanguageServer(QObject):
 
         @self.app.route("/lemmatize/<string:word>")
         def lemmatize(word):
-            return lem_word(word, self.settings.value("target_language"))
+            return lem_word(word, settings.value("target_language"))
 
         @self.app.route("/logs")
         def logs():

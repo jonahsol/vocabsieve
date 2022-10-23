@@ -1,17 +1,23 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 import platform
+from typing import Callable
 from shutil import rmtree
-from .tools import *
-from .dictionary import *
-from .dictmanager import *
-from .constants import DISABLED
+from dictionary.funcs import *
+from dictionary.dictionary import *
+from ui.dictmanager import *
+from settings import *
+from anki_connect import *
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent, ):
-        super().__init__(parent)
-        self.settings = parent.settings
-        self.parent = parent
+    def __init__(
+        self, 
+        status: Callable[[str], None],
+        on_close_app: Callable):
+        super().__init__()
+        self.status = status
+        self.onCloseApp = on_close_app
+
         self.setWindowTitle("Configure VocabSieve")
         self.initWidgets()
         self.initTabs()
@@ -21,11 +27,11 @@ class SettingsDialog(QDialog):
         self.deactivateProcessing()
 
     def initWidgets(self):
-        self.bar = QStatusBar()
+        self.statusBar = QStatusBar()
         self.allow_editing = QCheckBox(
             "Allow directly editing definition fields")
         self.primary = QCheckBox("Use primary selection")
-        self.register_config_handler(self.allow_editing, "allow_editing", True)
+        self.register_config_handler(self.allow_editing, "allow_editing")
         self.lemmatization = QCheckBox(
             "Use lemmatization for dictionary lookups")
         self.lemmatization.setToolTip(
@@ -55,7 +61,7 @@ class SettingsDialog(QDialog):
         self.reader_fontsize = QSpinBox()
         self.reader_fontsize.setMinimum(4)
         self.reader_fontsize.setMaximum(200)
-        self.reader_hlcolor = QPushButton(self.settings.value("reader_hlcolor", "#66bb77"))
+        self.reader_hlcolor = QPushButton(settings.value("reader_hlcolor", "#66bb77"))
         self.reader_hlcolor.clicked.connect(self.save_color)
 
         self.word_field = QComboBox()
@@ -178,7 +184,7 @@ class SettingsDialog(QDialog):
 
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.tabs)
-        self.layout.addWidget(self.bar)
+        self.layout.addWidget(self.statusBar)
 
         self.tabs.addTab(self.tab_d, "Dictionary")
         self.tabs.addTab(self.tab_p, "Processing")
@@ -190,7 +196,7 @@ class SettingsDialog(QDialog):
     def save_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
-            self.settings.setValue("reader_hlcolor", color.name())
+            settings.setValue("reader_hlcolor", color.name())
             self.reader_hlcolor.setText(color.name())
 
     def reset_settings(self):
@@ -204,7 +210,7 @@ class SettingsDialog(QDialog):
             defaultButton=QMessageBox.StandardButton.No
         )
         if answer == QMessageBox.Yes:
-            self.settings.clear()
+            settings.clear()
             self.close()
 
     def nuke_profile(self):
@@ -220,10 +226,10 @@ class SettingsDialog(QDialog):
             defaultButton=QMessageBox.StandardButton.No
         )
         if answer == QMessageBox.Yes:
-            self.settings.clear()
+            settings.clear()
             rmtree(datapath)
             os.mkdir(datapath)
-            self.parent.close()
+            self.onCloseApp()
 
     def setupWidgets(self):
         self.target_language.addItems(langs_supported.values())
@@ -381,17 +387,21 @@ class SettingsDialog(QDialog):
             # When there are no connected functions, it raises a TypeError
             pass
         # Reestablish config handlers
-        self.register_config_handler(self.display_mode,
-                                     f"{curr_dict}/" + "display_mode", "Markdown-HTML")
         self.display_mode.currentTextChanged.connect(
             self.deactivateProcessing
         )
-        self.register_config_handler(self.skip_top,
-                                     f"{curr_dict}/" + "skip_top", 0)
-        self.register_config_handler(self.collapse_newlines,
-                                     f"{curr_dict}/" + "collapse_newlines", 0)
-        self.register_config_handler(self.cleanup_html,
-                                     f"{curr_dict}/" + "cleanup_html", False)
+
+        set_per_dict_values(with_dict_defaults := {}, curr_dict)
+        settings.setDefaults(with_dict_defaults)
+
+        self.register_config_handler(self.display_mode,
+                                     get_nested_setting_key(curr_dict, "display_mode"))
+        self.register_config_handler(get_nested_setting_key,
+                                     get_nested_setting_key(curr_dict, "skip_top"))
+        self.register_config_handler(get_nested_setting_key,
+                                     get_nested_setting_key(curr_dict, "collapse_newlines"))
+        self.register_config_handler(get_nested_setting_key,
+                                     get_nested_setting_key(curr_dict, "cleanup_html"))
         self.deactivateProcessing()
 
     def deactivateProcessing(self):
@@ -404,22 +414,21 @@ class SettingsDialog(QDialog):
             self.collapse_newlines.setEnabled(True)
 
     def setupAutosave(self):
-        if self.settings.value("config_ver") is None \
-            and self.settings.value("target_language") is not None:
+        if settings.value("config_ver") is None \
+            and settings.value("target_language") is not None:
             # if old config is copied to new location, nuke it
-            self.settings.clear()
-        self.settings.setValue("config_ver", 1)
+            settings.clear()
+        settings.setValue("config_ver", 1)
         self.register_config_handler(
-            self.anki_api, 'anki_api', 'http://127.0.0.1:8765')
+            self.anki_api, 'anki_api')
         self.register_config_handler(
             self.target_language,
             'target_language',
-            'en',
             code_translate=True)
 
-        self.register_config_handler(self.check_updates, 'check_updates', False, True)
+        self.register_config_handler(self.check_updates, 'check_updates', False)
 
-        self.register_config_handler(self.enable_anki, 'enable_anki', True)
+        self.register_config_handler(self.enable_anki, 'enable_anki')
         self.enable_anki.clicked.connect(self.toggle_anki_settings)
         self.toggle_anki_settings(self.enable_anki.isChecked())
         api = self.anki_api.text()
@@ -432,83 +441,82 @@ class SettingsDialog(QDialog):
             self.loadDecks()
             self.loadFields()
             self.register_config_handler(
-                self.deck_name, 'deck_name', 'Default')
-            self.register_config_handler(self.tags, 'tags', 'vocabsieve')
-            self.register_config_handler(self.note_type, 'note_type', 'Basic')
+                self.deck_name, 'deck_name')
+            self.register_config_handler(self.tags, 'tags')
+            self.register_config_handler(self.note_type, 'note_type')
             self.register_config_handler(
-                self.sentence_field, 'sentence_field', 'Sentence')
-            self.register_config_handler(self.word_field, 'word_field', 'Word')
-            self.register_config_handler(self.frequency_field, 'frequency_field', 'Frequency Stars')
+                self.sentence_field, 'sentence_field')
+            self.register_config_handler(self.word_field, 'word_field')
+            self.register_config_handler(self.frequency_field, 'frequency_field')
             self.register_config_handler(
-                self.definition_field, 'definition_field', 'Definition')
+                self.definition_field, 'definition_field')
             self.register_config_handler(
                 self.definition2_field,
                 'definition2_field',
-                DISABLED)
+                )
             self.register_config_handler(
                 self.pronunciation_field,
                 'pronunciation_field',
-                DISABLED)
-            self.register_config_handler(self.image_field, 'image_field', DISABLED)
+                )
+            self.register_config_handler(self.image_field, 'image_field')
 
         self.loadDictionaries()
         self.loadAudioDictionaries()
         self.loadFreqSources()
 
-        self.dict_source2.currentTextChanged.connect(self.changeMainLayout)
+        self.dict_source2.currentTextChanged.connect(toggle_dict2_layout)
         self.postproc_selector.currentTextChanged.connect(self.setupProcessing)
         self.note_type.currentTextChanged.connect(self.loadFields)
         self.api_enabled.clicked.connect(self.setAvailable)
         self.reader_enabled.clicked.connect(self.setAvailable)
-        self.register_config_handler(self.lemmatization, 'lemmatization', True)
-        self.register_config_handler(self.lem_greedily, 'lem_greedily', False)
-        self.register_config_handler(self.lemfreq, 'lemfreq', True)
-        self.register_config_handler(self.bold_word, 'bold_word', True)
+        self.register_config_handler(self.lemmatization, 'lemmatization')
+        self.register_config_handler(self.lem_greedily, 'lem_greedily')
+        self.register_config_handler(self.lemfreq, 'lemfreq')
+        self.register_config_handler(self.bold_word, 'bold_word')
 
         self.register_config_handler(
             self.gtrans_lang,
             'gtrans_lang',
-            'en',
             code_translate=True)
         self.register_config_handler(
             self.dict_source,
             'dict_source',
-            'Wiktionary (English)')
+            )
         self.register_config_handler(
-            self.dict_source2, 'dict_source2', DISABLED)
-        self.register_config_handler(self.audio_dict, 'audio_dict', 'Forvo (all)')
+            self.dict_source2, 'dict_source2')
+        self.register_config_handler(self.audio_dict, 'audio_dict')
         self.register_config_handler(
-            self.freq_source, 'freq_source', DISABLED)
+            self.freq_source, 'freq_source')
         self.register_config_handler(
             self.web_preset,
             'web_preset',
-            'English Wiktionary')
-        self.register_config_handler(self.custom_url, 'custom_url', "https://en.wiktionary.org/wiki/@@@@")
+            )
+        self.register_config_handler(self.custom_url, 'custom_url')
 
-        self.register_config_handler(self.api_enabled, 'api_enabled', True)
-        self.register_config_handler(self.api_host, 'api_host', '127.0.0.1')
-        self.register_config_handler(self.api_port, 'api_port', 39284)
+        self.register_config_handler(self.api_enabled, 'api_enabled')
+        self.register_config_handler(self.api_host, 'api_host')
+        self.register_config_handler(self.api_port, 'api_port')
         self.register_config_handler(
             self.reader_enabled, 'reader_enabled', True)
         self.register_config_handler(
-            self.reader_host, 'reader_host', '127.0.0.1')
-        self.register_config_handler(self.reader_port, 'reader_port', 39285)
+            self.reader_host, 'reader_host')
+        self.register_config_handler(self.reader_port, 'reader_port')
         self.register_config_handler(
             self.gtrans_api,
             'gtrans_api',
-            'https://lingva.ml')
+            )
 
-        self.register_config_handler(self.reader_font, "reader_font", "serif")
-        self.register_config_handler(self.reader_fontsize, "reader_fontsize", 14)
-        self.register_config_handler(self.freq_display_mode, "freq_display", "Stars (like Migaku)")
-        self.register_config_handler(self.allow_editing, 'allow_editing', True)
-        self.register_config_handler(self.primary, 'primary', False)
+        self.register_config_handler(self.reader_font, "reader_font")
+        self.register_config_handler(self.reader_fontsize, "reader_fontsize")
+        self.register_config_handler(self.freq_display_mode, "freq_display")
+        self.register_config_handler(self.allow_editing, 'allow_editing')
+        self.register_config_handler(self.primary, 'primary')
         self.register_config_handler(
-            self.orientation, 'orientation', 'Vertical')
-        self.register_config_handler(self.text_scale, 'text_scale', '100')
+            self.orientation, 'orientation')
+        self.register_config_handler(self.text_scale, 'text_scale')
 
-        self.register_config_handler(self.img_format, 'img_format', 'jpg')
-        self.register_config_handler(self.img_quality, 'img_quality', -1)
+        self.register_config_handler(self.img_format, 'img_format')
+        self.register_config_handler(self.img_quality, 'img_quality')
 
         self.target_language.currentTextChanged.connect(self.loadDictionaries)
         self.target_language.currentTextChanged.connect(
@@ -539,19 +547,20 @@ class SettingsDialog(QDialog):
         self.image_field.setEnabled(value)
 
     def loadAudioDictionaries(self):
-        custom_dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        custom_dicts = json.loads(settings.value("custom_dicts", '[]'))
+
         self.audio_dict.blockSignals(True)
         self.audio_dict.clear()
         dicts = getAudioDictsForLang(
             langcodes.inverse[self.target_language.currentText()], custom_dicts)
         self.audio_dict.addItems(dicts)
         self.audio_dict.setCurrentText(
-            self.settings.value(
+            settings.value(
                 'audio_dict', "Forvo (all)"))
         self.audio_dict.blockSignals(False)
 
     def loadDictionaries(self):
-        custom_dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        custom_dicts = json.loads(settings.get("custom_dicts"))
         self.dict_source.blockSignals(True)
         self.dict_source.clear()
         self.dict_source2.blockSignals(True)
@@ -566,18 +575,18 @@ class SettingsDialog(QDialog):
         self.dict_source2.addItems(dicts)
         self.postproc_selector.addItems(dicts)
         self.dict_source.setCurrentText(
-            self.settings.value(
+            settings.value(
                 'dict_source',
                 'Wiktionary (English)'))
         self.dict_source2.setCurrentText(
-            self.settings.value(
+            settings.value(
                 'dict_source2', DISABLED))
         self.dict_source.blockSignals(False)
         self.dict_source2.blockSignals(False)
         self.postproc_selector.blockSignals(False)
 
     def loadFreqSources(self):
-        custom_dicts = json.loads(self.settings.value("custom_dicts", '[]'))
+        custom_dicts = json.loads(settings.value("custom_dicts", '[]'))
         sources = getFreqlistsForLang(
             langcodes.inverse[self.target_language.currentText()], custom_dicts)
         self.freq_source.blockSignals(True)
@@ -586,13 +595,13 @@ class SettingsDialog(QDialog):
         for item in sources:
             self.freq_source.addItem(item)
         self.freq_source.setCurrentText(
-            self.settings.value(
+            settings.value(
                 "freq_source", DISABLED))
         self.freq_source.blockSignals(False)
 
     def loadUrl(self):
-        lang = self.settings.value("target_language", "en")
-        tolang = self.settings.value("gtrans_lang", "en")
+        lang = settings.value("target_language", "en")
+        tolang = settings.value("gtrans_lang", "en")
         langfull = langcodes[lang]
         tolangfull = langcodes[tolang]
         self.presets = bidict({
@@ -604,7 +613,7 @@ class SettingsDialog(QDialog):
 
         if self.web_preset.currentText() == "Custom (Enter below)":
             self.custom_url.setEnabled(True)
-            self.custom_url.setText(self.settings.value("custom_url"))
+            self.custom_url.setText(settings.value("custom_url"))
         else:
             self.custom_url.setEnabled(False)
             self.custom_url.setText(
@@ -617,14 +626,14 @@ class SettingsDialog(QDialog):
         self.deck_name.blockSignals(True)
         self.deck_name.clear()
         self.deck_name.addItems(decks)
-        self.deck_name.setCurrentText(self.settings.value("deck_name"))
+        self.deck_name.setCurrentText(settings.value("deck_name"))
         self.deck_name.blockSignals(False)
 
         note_types = getNoteTypes(api)
         self.note_type.blockSignals(True)
         self.note_type.clear()
         self.note_type.addItems(note_types)
-        self.note_type.setCurrentText(self.settings.value("note_type"))
+        self.note_type.setCurrentText(settings.value("note_type"))
         self.note_type.blockSignals(False)
 
     def loadFields(self):
@@ -679,13 +688,13 @@ class SettingsDialog(QDialog):
         self.image_field.addItem(DISABLED)
         self.image_field.addItems(fields)
 
-        self.sentence_field.setCurrentText(self.settings.value("sentence_field"))
-        self.word_field.setCurrentText(self.settings.value("word_field"))
-        self.frequency_field.setCurrentText(self.settings.value("frequency_field"))
-        self.definition_field.setCurrentText(self.settings.value("definition_field"))
-        self.definition2_field.setCurrentText(self.settings.value("definition2_field"))
-        self.pronunciation_field.setCurrentText(self.settings.value("pronunciation_field"))
-        self.image_field.setCurrentText(self.settings.value("image_field"))
+        self.sentence_field.setCurrentText(settings.value("sentence_field"))
+        self.word_field.setCurrentText(settings.value("word_field"))
+        self.frequency_field.setCurrentText(settings.value("frequency_field"))
+        self.definition_field.setCurrentText(settings.value("definition_field"))
+        self.definition2_field.setCurrentText(settings.value("definition2_field"))
+        self.pronunciation_field.setCurrentText(settings.value("pronunciation_field"))
+        self.image_field.setCurrentText(settings.value("image_field"))
 
         if self.sentence_field.findText(sent) != -1:
             self.sentence_field.setCurrentText(sent)
@@ -721,68 +730,89 @@ class SettingsDialog(QDialog):
             "and reopen the config tool.")
         msg.exec()
 
-    def changeMainLayout(self):
-        if self.dict_source2.currentText() != DISABLED:
-            # This means user has changed from one source to two source mode,
-            # need to redraw main window
-            if self.settings.value("orientation", "Vertical") == "Vertical":
-                self.parent.layout.removeWidget(self.parent.definition)
-                self.parent.layout.addWidget(
-                    self.parent.definition, 7, 0, 2, 3)
-                self.parent.layout.addWidget(
-                    self.parent.definition2, 9, 0, 2, 3)
-                self.parent.definition2.setVisible(True)
-            else:
-                self.parent.layout.removeWidget(self.parent.definition)
-                self.parent.layout.addWidget(
-                    self.parent.definition, 2, 3, 4, 1)
-                self.parent.layout.addWidget(
-                    self.parent.definition2, 2, 4, 4, 1)
-                self.parent.definition2.setVisible(True)
-        else:
-            self.parent.layout.removeWidget(self.parent.definition)
-            self.parent.layout.removeWidget(self.parent.definition2)
-            self.parent.definition2.setVisible(False)
-            if self.settings.value("orientation", "Vertical") == "Vertical":
-                self.parent.layout.addWidget(
-                    self.parent.definition, 7, 0, 4, 3)
-            else:
-                self.parent.layout.addWidget(
-                    self.parent.definition, 2, 3, 4, 2)
-
-    def status(self, msg):
-        self.bar.showMessage(self.parent.time() + " " + msg, 4000)
-
     def register_config_handler(
             self,
             widget,
             key,
-            default,
             code_translate=False):
 
-        def update(v): return self.settings.setValue(key, v)
-        def update_map(v): return self.settings.setValue(
+        def update(v): return settings.setValue(key, v)
+        def update_map(v): return settings.setValue(
             key, langcodes.inverse[v])
 
         if type(widget) == QCheckBox:
-            widget.setChecked(self.settings.value(key, default, type=bool))
+            widget.setChecked(settings.get(key))
             widget.clicked.connect(update)
-            update(widget.isChecked())
         if type(widget) == QLineEdit:
-            widget.setText(self.settings.value(key, default))
+            widget.setText(settings.get(key))
             widget.textChanged.connect(update)
-            update(widget.text())
         if type(widget) == QComboBox:
             if code_translate:
                 widget.setCurrentText(
-                    langcodes[self.settings.value(key, default)])
+                    langcodes[settings.get(key)])
                 widget.currentTextChanged.connect(update_map)
-                update_map(widget.currentText())
             else:
-                widget.setCurrentText(self.settings.value(key, default))
+                widget.setCurrentText(settings.get(key))
                 widget.currentTextChanged.connect(update)
-                update(widget.currentText())
         if type(widget) == QSlider or type(widget) == QSpinBox:
-            widget.setValue(self.settings.value(key, default, type=int))
+            widget.setValue(settings.get(key))
             widget.valueChanged.connect(update)
-            update(widget.value())
+
+    def exec(self):
+        api = settings.value('anki_api', 'http://127.0.0.1:8765')
+        if settings.value('enable_anki', True, type=bool):
+            try:
+                _ = getVersion(api)
+            except Exception as e:
+                print(e)
+                answer = QMessageBox.question(
+                    self,
+                    "Could not reach AnkiConnect",
+                    "<h2>Could not reach AnkiConnect</h2>"
+                    "AnkiConnect is required for changing Anki-related settings."
+                    "<br>Choose 'Ignore' to not change Anki settings this time."
+                    "<br>Choose 'Abort' to not open the configuration window."
+                    "<br><br>If you have AnkiConnect listening to a non-default port or address, "
+                    "select 'Ignore and change the Anki API option on the Anki tab, and "
+                    "reopen the configuration window."
+                    "<br><br>If you do not wish to use Anki with this program, select 'Ignore' "
+                    "and then uncheck the 'Enable Anki' checkbox on the Anki tab.",
+                    buttons=QMessageBox.Ignore | QMessageBox.Abort,
+                    defaultButton=QMessageBox.Ignore
+                )
+                if answer == QMessageBox.Ignore:
+                    pass
+                if answer == QMessageBox.Abort:
+                    return
+
+        super().exec()
+
+def toggle_dict2_layout(withDict2: bool):
+    pass
+    # if withDict2:
+    #     # This means user has changed from one source to two source mode,
+    #     # need to redraw main window
+    #     if settings.get("orientation") == Orientation.VERTICAL:
+    #         self.parent.layout.removeWidget(self.parent.definition)
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition, 7, 0, 2, 3)
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition2, 9, 0, 2, 3)
+    #         self.parent.definition2.setVisible(True)
+    #     else:
+    #         self.parent.layout.removeWidget(self.parent.definition)
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition, 2, 3, 4, 1)
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition2, 2, 4, 4, 1)
+    #         self.parent.definition2.setVisible(True)
+    # else:
+    #     self.parent.layout.removeWidget(self.parent.definition)
+    #     self.parent.layout.removeWidget(self.parent.definition2)
+    #     self.parent.definition2.setVisible(False)
+    #     if settings.get("orientation") == Orientation.VERTICAL:
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition, 7, 0, 4, 3)
+    #     else:
+    #         self.parent.layout.addWidget(
+    #             self.parent.definition, 2, 3, 4, 2)

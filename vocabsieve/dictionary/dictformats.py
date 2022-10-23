@@ -1,11 +1,12 @@
 from readmdict import MDX
-from .dsl import Reader
+from dsl import Reader
 from bidict import bidict
 from typing import Dict
 import os
 import re
 import csv
 import json
+from dictionary.funcs import *
 
 supported_dict_formats = bidict({
     "stardict": "StarDict",
@@ -107,15 +108,6 @@ def parseDSL(path) -> Dict[str, str]:
             definition = re.sub(r'(\<b\>\d+\.\</b\>)\s+\<br>', r'\1 ', definition)
             newdict[headword] = removeprefix(definition, "<br>")
     return newdict
-
-
-# There is a str.removeprefix function, but it is implemented
-# only in python 3.9. Copying the implementation here
-def removeprefix(self: str, prefix: str, /) -> str:
-    if self.startswith(prefix):
-        return self[len(prefix):]
-    else:
-        return self[:]
 
 
 def parseCSV(path) -> Dict[str, str]:

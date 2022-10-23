@@ -6,16 +6,14 @@ from os import path
 import os
 import re
 import base64
-from PyQt5.QtCore import QStandardPaths, QCoreApplication
-from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 from dataclasses import dataclass
+from data.datapath import mk_data_dir, get_data_abs_path
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
-datapath = QStandardPaths.writableLocation(QStandardPaths.DataLocation)
-Path(path.join(datapath, "_forvo")).mkdir(parents=True, exist_ok=True)
-
+forvo_path = get_data_abs_path("_forvo")
+mk_data_dir(forvo_path)
 
 @dataclass
 class Pronunciation:

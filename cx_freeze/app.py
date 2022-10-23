@@ -25,7 +25,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("VocabSieve")
     app.setOrganizationName("FreeLanguageTools")
-    from vocabsieve.main import DictionaryWindow
-    w = DictionaryWindow()
+    from vocabsieve.main import AppWindow
+    w = AppWindow()
     w.show()
     sys.exit(app.exec())

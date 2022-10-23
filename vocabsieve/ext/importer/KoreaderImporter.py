@@ -9,16 +9,15 @@ import json
 from pathlib import Path
 from difflib import SequenceMatcher
 from sentence_splitter import split_text_into_sentences
-from vocabsieve.tools import addNotes
-from vocabsieve.dictionary import getAudio
+from anki_connect import addNotes
+from dictionary.dictionary import getAudio
 from datetime import datetime
 from itertools import compress
 from slpp import slpp
 from lxml import etree
 from ebooklib import epub, ITEM_DOCUMENT
-
+from settings import settings
 from .utils import *
-
 
 def fb2_xpathconvert(s):
     s = "/".join(s.split("/")[2:-1])
@@ -111,7 +110,7 @@ def koreader_scandir(path):
 class KoreaderImporter(QDialog):
     def __init__(self, parent, path):
         super().__init__(parent)
-        self.settings = parent.settings
+        settings = parent.settings
         self.lang = parent.settings.value('target_language')
         self.setWindowTitle("Import KOReader notes")
         self.parent = parent
@@ -209,14 +208,14 @@ class KoreaderImporter(QDialog):
                 self.definition2s.append(item.get('definition2', ""))
 
                 audio_path = ""
-                if self.settings.value("audio_dict", "Forvo (all)") != DISABLED:
+                if settings.value("audio_dict", "Forvo (all)") != DISABLED:
                     try:
                         audios = getAudio(
                                 word,
-                                self.settings.value("target_language", 'en'),
-                                dictionary=self.settings.value("audio_dict", "Forvo (all)"),
+                                settings.value("target_language", 'en'),
+                                dictionary=settings.value("audio_dict", "Forvo (all)"),
                                 custom_dicts=json.loads(
-                                    self.settings.value("custom_dicts", '[]')))
+                                    settings.value("custom_dicts", '[]')))
                     except Exception:
                         audios = {}
                     if audios:
@@ -252,17 +251,17 @@ class KoreaderImporter(QDialog):
                 definition = definition.replace("\n", "<br>")
                 content['fields'][self.parent.settings.value(
                     'definition_field')] = definition
-                if self.settings.value("dict_source2", DISABLED) != DISABLED:
+                if settings.value("dict_source2", DISABLED) != DISABLED:
                     definition2 = definition2.replace("\n", "<br>")
                     content['fields'][self.parent.settings.value('definition2_field')] = definition2
-                if self.settings.value("audio_dict", DISABLED) != DISABLED and audio_path:
+                if settings.value("audio_dict", DISABLED) != DISABLED and audio_path:
                     content['audio'] = {}
                     if audio_path.startswith("https://") or audio_path.startswith("http://"):
                         content['audio']['url'] = audio_path
                     else:
                         content['audio']['path'] = audio_path
                     content['audio']['filename'] = audio_path.replace("\\", "/").split("/")[-1]
-                    content['audio']['fields'] = [self.settings.value('pronunciation_field')]
+                    content['audio']['fields'] = [settings.value('pronunciation_field')]
 
                 print(content)
                 notes.append(content)

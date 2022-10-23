@@ -11,11 +11,12 @@ from bidict import bidict
 import pymorphy2
 from markdownify import markdownify
 from markdown import markdown
-from .db import *
-from .playsound import playsound
-from .forvo import *
-from .dictformats import removeprefix
-from .constants import DISABLED
+from db import *
+from dictionary.playsound import playsound
+from dictionary.forvo import *
+from dictionary.funcs import *
+from settings import DISABLED
+
 dictdb = LocalDictionary()
 
 gtrans_languages = ['af', 'sq', 'am', 'ar', 'hy', 'az', 'eu', 'be', 'bn',
@@ -52,17 +53,6 @@ try:
 except ValueError:
     morph = None
     pass
-
-
-def preprocess_clipboard(s: str, lang: str) -> str:
-    """
-    Pre-process string from clipboard before showing it
-    NOTE: originally intended for parsing JA and ZH, but
-    that feature has been removed for the time being due
-    to maintainence and dependency concerns.
-    """
-    return s
-
 
 def removeAccents(word):
     #print("Removing accent marks from query ", word)
@@ -152,9 +142,8 @@ def googletranslate(word, language, gtrans_lang, gtrans_api) -> Optional[str]:
     else:
         return
 
-
+# Returns { [audio_name]: audio_url }
 def getAudio(word, language, dictionary="Forvo (all)", custom_dicts=[]) -> Optional[Dict[str, str]]:
-    # should return a dict of audio names and paths to audio
     if dictionary == "Forvo (all)":
         return fetch_audio_all(word, language)
     elif dictionary == "Forvo (best)":
@@ -260,18 +249,12 @@ def getFreqlistsForLang(lang: str, dicts: list):
     return [item['name']
             for item in dicts if item['lang'] == lang and item['type'] == "freq"]
 
-
-forvopath = os.path.join(
-    QStandardPaths.writableLocation(
-        QStandardPaths.DataLocation), "forvo")
-
-
 def play_audio(name: str, data: dict, lang: str):
     audiopath = data.get(name)
     if audiopath is None:
         return
     if audiopath.startswith("https://"):
-        fpath = os.path.join(forvopath, lang, name) + audiopath[-4:]
+        fpath = os.path.join(forvo_path, lang, name) + audiopath[-4:]
         if not os.path.exists(fpath):
             res = requests.get(audiopath, headers=HEADERS)
             if res.status_code == 200:

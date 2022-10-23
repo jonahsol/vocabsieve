@@ -9,3 +9,4 @@ cx_freeze/build
 htmlcov
 .tox
 venv/
+.vscode/
