@@ -57,22 +57,6 @@ if platform.system() == "Darwin":
 else:
     MOD = "Ctrl"
 
-@unique
-class Field(Enum):
-    SENTENCE = auto()
-    DEFINITION = auto()
-    DEFINITION2 = auto()
-
-@unique
-class Event(Enum):
-    DOUBLECLICK = auto()
-    MOUSEPRESS = auto()
-    SELECTION = auto()
-
-events = {}
-for ev in Event:
-    events[ev] = { fieldEnum: ev.name + fieldEnum.name for fieldEnum in Field }
-
 @functools.lru_cache()
 class GlobalObject(QObject):
     """
@@ -92,11 +76,22 @@ class GlobalObject(QObject):
             QTimer.singleShot(0, lambda: func(**args))
 
 
+@unique
+class FieldEvent(Enum):
+    DOUBLECLICK = auto()
+    MOUSEPRESS = auto()
+    SELECTION = auto()
+@unique
+class FieldName(Enum):
+    SENTENCE = auto()
+    DEFINITION = auto()
+    DEFINITION2 = auto()
+
 class MyTextEdit(QTextEdit):
 
-    def __init__(self, fieldEnum):
+    def __init__(self, name: FieldName):
         super().__init__()
-        self.fieldEnum = fieldEnum
+        self.name = name
         self.partialLookupFailureBlock = None
         self.completeLookupFailureBlock = None
 
@@ -105,19 +100,21 @@ class MyTextEdit(QTextEdit):
     @pyqtSlot()
     def mouseDoubleClickEvent(self, e):
         super().mouseDoubleClickEvent(e)
-        GlobalObject().dispatchEvent(events[Event.DOUBLECLICK][self.fieldEnum])
+        GlobalObject().dispatchEvent(getFieldEventKey(self, FieldEvent.DOUBLECLICK))
         self.textCursor().clearSelection()
         self.original = ""
 
     @pyqtSlot()
     def mousePressEvent(self, e):
         super().mousePressEvent(e)
-        GlobalObject().dispatchEvent(events[Event.MOUSEPRESS][self.fieldEnum])
+        GlobalObject().dispatchEvent(getFieldEventKey(self, FieldEvent.MOUSEPRESS))
 
     @pyqtSlot()
     def handleSelectionChanged(self):
-        GlobalObject().dispatchEvent(events[Event.SELECTION][self.fieldEnum])
+        GlobalObject().dispatchEvent(getFieldEventKey(self, FieldEvent.SELECTION))
 
+def getFieldEventKey(field: MyTextEdit, event: FieldEvent):
+    return field.name.name + event.name
 
 class DictionaryWindow(QMainWindow):
     def __init__(self):
@@ -153,24 +150,24 @@ class DictionaryWindow(QMainWindow):
         self.checkUpdates()
 
         # Sentence listeners
-        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.SENTENCE],
-                                        lambda: self.textEditDoubleClicked(Field.SENTENCE))
-        GlobalObject().addEventListener(events[Event.SELECTION][Field.SENTENCE],
-                                        lambda: self.selectionMade(Field.SENTENCE))
+        GlobalObject().addEventListener(getFieldEventKey(self.sentence, FieldEvent.DOUBLECLICK),
+                                        lambda: self.handleTextEditDoubleClicked(self.sentence))
+        GlobalObject().addEventListener(getFieldEventKey(self.sentence, FieldEvent.SELECTION),
+                                        lambda: self.handleSelectionMade(self.sentence))
         # Definition listeners
-        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION],
-                                        lambda: self.textEditDoubleClicked(Field.DEFINITION))
-        GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION],
-                                        lambda: self.defnFieldPressed(Field.DEFINITION))
-        GlobalObject().addEventListener(events[Event.SELECTION][Field.DEFINITION],
-                                        lambda: self.selectionMade(Field.DEFINITION))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition, FieldEvent.DOUBLECLICK),
+                                        lambda: self.handleTextEditDoubleClicked(self.definition))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition, FieldEvent.MOUSEPRESS),
+                                        lambda: self.handleDefnFieldPressed(self.definition))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition, FieldEvent.SELECTION),
+                                        lambda: self.handleSelectionMade(self.definition))
         # Definition 2 listeners
-        GlobalObject().addEventListener(events[Event.DOUBLECLICK][Field.DEFINITION2],
-                                        lambda: self.textEditDoubleClicked(Field.DEFINITION2))
-        GlobalObject().addEventListener(events[Event.MOUSEPRESS][Field.DEFINITION2],
-                                        lambda: self.defnFieldPressed(Field.DEFINITION2))
-        GlobalObject().addEventListener(events[Event.SELECTION][Field.DEFINITION2],
-                                        lambda: self.selectionMade(Field.DEFINITION2))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition2, FieldEvent.DOUBLECLICK),
+                                        lambda: self.handleTextEditDoubleClicked(self.definition2))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition2, FieldEvent.MOUSEPRESS),
+                                        lambda: self.handleDefnFieldPressed(self.definition2))
+        GlobalObject().addEventListener(getFieldEventKey(self.definition2, FieldEvent.SELECTION),
+                                        lambda: self.handleSelectionMade(self.definition2))
 
         # Connect to OS clipboard
         if self.settings.value("primary", False, type=bool)\
@@ -235,24 +232,19 @@ class DictionaryWindow(QMainWindow):
             "<h2 style=\"font-weight: normal;\">" + getAppTitle() + "</h2>")
         self.menu = QMenuBar(self)
 
-        self.sentence = MyTextEdit(Field.SENTENCE)
+        self.sentence = MyTextEdit(FieldName.SENTENCE)
         self.sentence.setPlaceholderText(
             "Sentence copied to the clipboard will show up here.")
         self.sentence.setMinimumHeight(50)
         #self.sentence.setMaximumHeight(300)
         self.word = QLineEdit()
         self.word.setPlaceholderText("Word will appear here when looked up.")
-        self.definition = MyTextEdit(Field.DEFINITION)
+        self.definition = MyTextEdit(FieldName.DEFINITION)
         self.definition.setMinimumHeight(70)
         #self.definition.setMaximumHeight(1800)
-        self.definition2 = MyTextEdit(Field.DEFINITION2)
+        self.definition2 = MyTextEdit(FieldName.DEFINITION2)
         self.definition2.setMinimumHeight(70)
         #self.definition2.setMaximumHeight(1800)
-
-        self.fieldEnumToField = {}
-        self.fieldEnumToField[Field.SENTENCE] = self.sentence
-        self.fieldEnumToField[Field.DEFINITION] = self.definition
-        self.fieldEnumToField[Field.DEFINITION2] = self.definition2
         
         self.tags = QLineEdit()
         self.tags.setPlaceholderText(
@@ -649,10 +641,10 @@ class DictionaryWindow(QMainWindow):
         # Must call after `modify_defn_field`
         self.updateAnkiButtonState(True)
 
-    def getOtherDefField(self, fieldEnum):
-        if (fieldEnum == Field.DEFINITION):
+    def getOtherDefField(self, field: MyTextEdit):
+        if (field.name == FieldName.DEFINITION):
             return self.definition2
-        if (fieldEnum == Field.DEFINITION2):
+        if (field.name == FieldName.DEFINITION2):
             return self.definition
 
     def clearAllLookupFailures(self):
@@ -667,42 +659,38 @@ class DictionaryWindow(QMainWindow):
         clearLookupFailures(self.definition)
         clearLookupFailures(self.definition2)
 
-    def clearCompleteFailure(self, fieldEnum):
+    def clearCompleteFailure(self, defn_field: MyTextEdit):
         self.updateAnkiButtonState(False)
 
-        defn_field = self.fieldEnumToField[fieldEnum]
-        self.clearPartialFailure(fieldEnum)
+        self.clearPartialFailure(defn_field)
         defn_field.completeLookupFailureBlock = None
 
-        other_defn_field = self.getOtherDefField(fieldEnum)
+        other_defn_field = self.getOtherDefField(defn_field)
         self.setPartialLookupFailure(self.getWord(), other_defn_field)
 
-    def clearPartialFailure(self, fieldEnum):
-        defn_field = self.fieldEnumToField[fieldEnum]
-
+    def clearPartialFailure(self, defn_field: MyTextEdit):
         reset_text_edit(defn_field)
         defn_field.setReadOnly(False)
         defn_field.partialLookupFailureBlock = None
 
-    def defnFieldPressed(self, fieldEnum):
-        defn_field = self.fieldEnumToField[fieldEnum]
-
+    def handleDefnFieldPressed(self, defn_field: MyTextEdit):
+        print(defn_field)
         # Check if `completeLookupFailureBlock` was clicked
         if (defn_field.completeLookupFailureBlock and
             defn_field.completeLookupFailureBlock == defn_field.textCursor().block()):
-            self.clearCompleteFailure(fieldEnum)
+            self.clearCompleteFailure(defn_field)
 
         # Check if `partialFailureBlock` was clicked
         elif (defn_field.partialLookupFailureBlock and
               defn_field.partialLookupFailureBlock == defn_field.textCursor().block()):
-            self.clearPartialFailure(fieldEnum)
+            self.clearPartialFailure(defn_field)
 
     def getWord(self):
         return self.word.text()
 
-    def selectionMade(self, fieldEnum: Field):
-        self.selectedText = getSelectedText(self.fieldEnumToField[fieldEnum])
-    def textEditDoubleClicked(self, fieldEnum):
+    def handleSelectionMade(self, field: MyTextEdit):
+        self.selectedText = getSelectedText(field)
+    def handleTextEditDoubleClicked(self, field: MyTextEdit):
         self.lookupSet(self.selectedText)
 
     def lookupCurrentSelectionOrPrevWord(self, use_lemmatize: bool):
