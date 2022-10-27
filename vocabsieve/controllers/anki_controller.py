@@ -30,8 +30,6 @@ class AnkiController():
                 re_bolded,
                 r"<strong>\1</strong>",
                 sentence)
-        if settings.value("remove_spaces", False, type=bool):
-            sentence = re.sub("\\s", "", sentence)
         word = self.widgets.word.text()
 
         content = default_note_request()
