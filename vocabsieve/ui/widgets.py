@@ -50,19 +50,23 @@ class Widgets():
         #self.sentence.setMaximumHeight(300)
         self.word = QLineEdit()
         self.word.setPlaceholderText("Word will appear here when looked up.")
-        self.definition = SearchableTextEdit(FieldName.DEFINITION)
+        self.definition = SearchableLoadableTextEdit(
+            name=FieldName.DEFINITION,
+            loadingText=lookup_loading,
+            placeholderText=lookup_placeholder)
         self.definition.setMinimumHeight(70)
         #self.definition.setMaximumHeight(1800)
-        self.definition2 = SearchableTextEdit(FieldName.DEFINITION2)
+        self.definition2 = SearchableLoadableTextEdit(
+            name=FieldName.DEFINITION2,
+            loadingText=lookup_loading,
+            placeholderText=lookup_placeholder)
         self.definition2.setMinimumHeight(70)
         #self.definition2.setMaximumHeight(1800)
         
         self.tags = QLineEdit()
         self.tags.setPlaceholderText(
             "Type in a list of tags to be used, separated by spaces (same as in Anki).")
-        self.sentence.setToolTip(
-            "Look up a word by double clicking it. Or, select it"
-            ", then press \"Get definition\".")
+        self.sentence.setToolTip(lookup_tooltip)
 
         self.lookup_button = QPushButton(f"Define [{MOD}-D]")
         self.lookup_exact_button = QPushButton(f"Define Direct [Shift-{MOD}-D]")
@@ -104,10 +108,6 @@ class Widgets():
                     "allow_editing",
                     True,
                     type=bool)))
-        self.definition.setPlaceholderText(
-            'Look up a word by double clicking it. Or, select it, then press "Get definition".')
-        self.definition2.setPlaceholderText(
-            'Look up a word by double clicking it. Or, select it, then press "Get definition".')
 
         self.image_viewer = QLabel("<center><b>&lt;No image selected&gt;</center>")
         self.image_viewer.setScaledContents(True)

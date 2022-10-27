@@ -11,11 +11,13 @@ class FieldName(Enum):
     DEFINITION2 = auto()
 
 class SearchableTextEdit(QTextEdit):
+    partialLookupFailureBlock = None
+    completeLookupFailureBlock = None
+    original = None
+
     def __init__(self, name: FieldName):
         super().__init__()
         self.name = name
-        self.partialLookupFailureBlock = None
-        self.completeLookupFailureBlock = None
     
     @pyqtSlot()
     def mouseDoubleClickEvent(self, e):
@@ -25,6 +27,32 @@ class SearchableTextEdit(QTextEdit):
     @pyqtSlot()
     def mousePressEvent(self, e):
         super().mousePressEvent(e)
+
+class SearchableLoadableTextEdit(SearchableTextEdit):
+    def __init__(
+        self, 
+        name: FieldName, 
+        loadingText: str,
+        placeholderText: Optional[str] = None):
+
+        super().__init__(name)
+        self.defaultPlaceholderText = placeholderText
+        self.loadingText = loadingText
+        self.maybeSetDefaultPlaceholderText()
+
+    def maybeSetDefaultPlaceholderText(self):
+        if self.defaultPlaceholderText:
+            self.setPlaceholderText(self.defaultPlaceholderText)
+
+    def setLoading(self, loading: bool):
+        if loading:
+            self.clear()
+            self.setEnabled(False)
+            self.setPlaceholderText(self.loadingText)
+        else:
+            self.setEnabled(True)
+            self.maybeSetDefaultPlaceholderText()
+
 
 def reset_text_edit(text_edit: QTextEdit):
     text_edit.clear()

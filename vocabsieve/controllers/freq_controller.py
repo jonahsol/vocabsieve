@@ -2,7 +2,7 @@ from optparse import Option
 from ui.widgets import *
 from settings import *
 from dictionary.dictionary import apply_lemmatization, getFreq
-from app_threading import *
+from qt_threading.worker import *
 from typing import Tuple
 
 class FreqController():
@@ -42,7 +42,8 @@ class FreqController():
                 elif freq_display == "Stars":
                     self.widgets.freq_display.setText(freq_to_stars(1e6, lemfreq))
         
-        QThreadPool.globalInstance().start(Worker(perform_lookup, receive_lookup))
+        QThreadPool.globalInstance().start(
+            Worker(perform_lookup, result_slot=receive_lookup))
 
 
 def freq_to_stars(freq_num, lemmatize):

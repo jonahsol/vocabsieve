@@ -5,7 +5,7 @@ from settings import *
 from dictionary.dictionary import get_audio
 import json
 from funcs.errors import pass_exceptions
-from app_threading import *
+from qt_threading.worker import *
 
 class WordAudioController():
     def __init__(self, widgets: Widgets):
@@ -20,7 +20,7 @@ class WordAudioController():
                         settings.get("target_language"),
                         dictionary=settings.get("audio_dict"),
                         custom_dicts=json.loads(settings.get("custom_dicts")))),
-                    self.state.setAudios
+                    result_slot=self.state.setAudios
                 ))
 
     def selectAudio(self, audio_key):

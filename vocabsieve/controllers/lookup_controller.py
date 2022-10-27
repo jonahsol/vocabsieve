@@ -9,7 +9,7 @@ from dictionary.dictionary import *
 from controllers.freq_controller import *
 from controllers.word_audio_controller import *
 from controllers.state import *
-from app_threading import *
+from qt_threading.worker import *
 
 class LookupController():
     rawWordLookup = None
@@ -161,8 +161,17 @@ class LookupController():
                         self.widgets.definition2,
                         definition2)
 
-        lookup_worker = Worker(perform_lookups, lambda t: receive_lookups(*t))
-        QThreadPool.globalInstance().start(lookup_worker)
+        def toggle_lookups_loading(loading: bool):
+            self.widgets.definition.setLoading(loading)
+            if using_defn2:
+                self.widgets.definition2.setLoading(loading)
+
+        QThreadPool.globalInstance().start(
+            Worker(
+                perform_lookups, 
+                result_slot=lambda t: receive_lookups(*t),
+                start_slot=lambda: toggle_lookups_loading(True),
+                finished_slot=lambda: toggle_lookups_loading(False)))
 
         self.wordAudioController.lookupAndUpdateState(word)
         self.freqController.lookupAndUpdateState(word)

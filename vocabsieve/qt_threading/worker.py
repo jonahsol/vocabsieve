@@ -1,23 +1,19 @@
 from PyQt5.QtCore import *
 import traceback
 import sys
-from typing import Optional, Callable, Any
-
-class WorkerSignals(QObject):
-    start = pyqtSignal()
-    finished = pyqtSignal()
-    error = pyqtSignal(tuple)
-    result = pyqtSignal(object)
-    progress = pyqtSignal(object)
+from typing_extensions import Unpack
+from qt_threading.types import *
 
 class Worker(QRunnable):
-    def __init__(self, f, result_slot: Optional[Callable[[Any], None]] = None):
+    def __init__(self, 
+        f, 
+        **slots: Unpack[WorkerSlotKwArgs]):
         super(Worker, self).__init__()
 
         self.f = f
         self.signals = WorkerSignals()
-        if (result_slot):
-            self.signals.result.connect(result_slot)
+        for slot_name, slot in slots.items():
+            getattr(self.signals, worker_slot_to_signal[slot_name]).connect(slot)
 
     @pyqtSlot()
     def run(self):
