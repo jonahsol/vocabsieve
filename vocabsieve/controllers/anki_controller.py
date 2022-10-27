@@ -1,4 +1,3 @@
-from PyQt5.QtWidgets import QMessageBox
 from ui.widgets import *
 from ui.searchable_text_edit import *
 from dictionary.dictionary import *
@@ -33,16 +32,13 @@ class AnkiController():
                 sentence)
         if settings.value("remove_spaces", False, type=bool):
             sentence = re.sub("\\s", "", sentence)
-        tags = (settings.value("tags", "vocabsieve").strip() + " " + self.widgets.tags.text().strip()).split(" ")
         word = self.widgets.word.text()
-        content = {
-            "deckName": settings.value("deck_name"),
-            "modelName": settings.value("note_type"),
-            "fields": {
-                settings.value("sentence_field"): sentence,
-                settings.value("word_field"): word,
-            },
-            "tags": tags
+
+        content = default_note_request()
+        content["tags"] = content["tags"] + " " + self.widgets.tags.text().strip()
+        content["fields"] = {
+            settings.value("sentence_field"): sentence,
+            settings.value("word_field"): word,
         }
 
         def process_def_if_no_lookup_failure(dictname, defn_field: SearchableTextEdit, anki_field):
@@ -99,35 +95,7 @@ class AnkiController():
             }
 
         self.widgets.status("Adding note")
-        api = settings.value("anki_api")
-        try:
-            if settings.value("enable_anki", True, type=bool):
-                addNote(api, content)
-                rec.recordNote(
-                    json.dumps(content), 
-                    sentence,
-                    word,
-                    definition,
-                    definition2,
-                    self.state.audio_path,
-                    self.state.image_path,
-                    " ".join(tags),
-                    True
-                )
-            else:
-                rec.recordNote(
-                    json.dumps(content), 
-                    sentence,
-                    word,
-                    definition,
-                    definition2,
-                    self.state.audio_path,
-                    self.state.image_path,
-                    " ".join(tags),
-                    False
-                )
-            self.widgets.status(f"Note added: '{word}'")
-        except Exception as e:
+        def recordNoteAddition(success: bool):
             rec.recordNote(
                 json.dumps(content), 
                 sentence,
@@ -136,19 +104,27 @@ class AnkiController():
                 definition2,
                 self.state.audio_path,
                 self.state.image_path,
-                " ".join(tags),
-                False
+                content["tags"],
+                success
             )
+
+        try:
+            if settings.value("enable_anki", True, type=bool):
+                addNote(settings.get("anki_api"), content)
+                recordNoteAddition(True)
+                self.widgets.status(f"Note added: '{word}'")
+            else: recordNoteAddition(False)
+
+            self.state.reset()
+        except Exception as e:
+            recordNoteAddition(False)
             self.widgets.status(f"Failed to add note: {word}")
             warn(
-                f"Failed to add note: {word}"
-                + "<h2>Failed to add note</h2>"
-                + f"Reason: {e}"
+                f"<h2>Failed to add note: {word}</h2>"
+                + f"Reason: {str(e)}"
                 + "<br><br>"
                 + "AnkiConnect must be running to add notes."
                 "<br>If you wish to only add notes to the database (and "
                 "export it as CSV), click Configure and uncheck 'Enable"
                 " Anki' on the Anki tab."
             )
-
-        self.state.resetState()

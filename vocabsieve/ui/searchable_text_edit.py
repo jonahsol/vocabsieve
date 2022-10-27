@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QTextEdit
 from PyQt5.QtCore import pyqtSlot
-from PyQt5.QtGui import QTextCursor, QTextCharFormat, QCursor
+from PyQt5.QtGui import QTextCursor, QTextCharFormat, QCursor, QTextBlock
 from enum import Enum, unique, auto
 from typing import Optional
 
@@ -11,9 +11,9 @@ class FieldName(Enum):
     DEFINITION2 = auto()
 
 class SearchableTextEdit(QTextEdit):
-    partialLookupFailureBlock = None
-    completeLookupFailureBlock = None
-    original = None
+    partialLookupFailureBlock: Optional[QTextBlock] = None
+    completeLookupFailureBlock: Optional[QTextBlock] = None
+    original: Optional[str] = None
 
     def __init__(self, name: FieldName):
         super().__init__()

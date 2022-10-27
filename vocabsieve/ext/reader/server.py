@@ -2,13 +2,12 @@ from flask import Flask, render_template, flash, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.utils import secure_filename
-from markdown import markdown
 import os
 import re
-from .utils import *
-from PyQt5.QtCore import QStandardPaths, QCoreApplication, QObject
-from pathlib import Path
+from PyQt5.QtCore import QCoreApplication
 from data.datapath import mk_data_dir, get_data_abs_path
+from settings import *
+from .utils import *
 
 # The following import is to avoid cxfreeze error
 import sqlalchemy.sql.default_comparator
@@ -56,12 +55,12 @@ with app.app_context():
 
     db.create_all()
 
-class ReaderServer(QObject):
-    def __init__(self, parent, host, port):
+class ReaderServer():
+    def __init__(self, host, port):
         super(ReaderServer, self).__init__()
         self.host = host
         self.port = port
-        self.parent = parent
+        self.start_api()
 
     def start_api(self):
         """ Main server application """
@@ -77,9 +76,9 @@ class ReaderServer(QObject):
             text = Text.query.get(id)
             return render_template("page.html",
                                    text=text,
-                                   font=self.parent.settings.value("reader_font", 'serif'),
-                                   size=self.parent.settings.value("reader_fontsize", 14, type=int),
-                                   color=self.parent.settings.value("reader_hlcolor", '#66bb77')
+                                   font=settings.value("reader_font", 'serif'),
+                                   size=settings.value("reader_fontsize", 14, type=int),
+                                   color=settings.value("reader_hlcolor", '#66bb77')
                                    )
 
         @app.route("/update/<int:id>", methods=['POST'])

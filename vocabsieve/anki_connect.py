@@ -1,13 +1,14 @@
 import json
 import urllib.request
 from typing import List
+from settings import *
 
-def request(action, **params):
+def make_anki_connect_request(action, **params):
     return {'action': action, 'params': params, 'version': 6}
 
 requestTimeout = 2
 def invoke(action, server, **params):
-    requestJson = json.dumps(request(action, **params)).encode('utf-8')
+    requestJson = json.dumps(make_anki_connect_request(action, **params)).encode('utf-8')
     response = json.load(
         urllib.request.urlopen(
             urllib.request.Request(
@@ -51,3 +52,11 @@ def addNotes(server, content) -> List[int]:
 def getVersion(server) -> str:
     result = invoke('version', server)
     return str(result)
+
+def default_note_request():
+    return {
+        "deckName": settings.get("deck_name"),
+        "modelName": settings.get("note_type"),
+        "tags": settings.get("tags").strip(),
+        "fields": {}
+    }

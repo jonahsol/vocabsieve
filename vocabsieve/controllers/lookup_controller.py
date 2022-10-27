@@ -10,6 +10,7 @@ from controllers.freq_controller import *
 from controllers.word_audio_controller import *
 from controllers.state import *
 from qt_threading.worker import *
+from db import *
 
 class LookupController():
     rawWordLookup = None
@@ -187,8 +188,8 @@ class LookupController():
             word,
             settings.get("target_language"),
             dictname,
-            settings.value("gtrans_lang", "en"),
-            settings.value("gtrans_api", "https://lingva.ml"))
+            settings.get("gtrans_lang"),
+            settings.get("gtrans_api"))
 
     def setDefinitionFieldState(self, dictname, defn_field: SearchableTextEdit, value: str):
         defn_field.original = value.strip()
@@ -224,6 +225,7 @@ class LookupController():
                     collapse_newlines
                 )
             )
+
     def recordLookupRes(
         self, 
         word: str, 

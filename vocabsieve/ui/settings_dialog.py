@@ -8,6 +8,7 @@ from dictionary.dictionary import *
 from ui.dictmanager import *
 from settings import *
 from anki_connect import *
+from data.datapath import *
 
 class SettingsDialog(QDialog):
     def __init__(
@@ -50,6 +51,7 @@ class SettingsDialog(QDialog):
         self.target_language = QComboBox()
         self.deck_name = QComboBox()
         self.tags = QLineEdit()
+        self.tags.setToolTip("Space seperated default anki tags")
         self.dict_source = QComboBox()
         self.dict_source2 = QComboBox()
         self.freq_source = QComboBox()
@@ -214,7 +216,6 @@ class SettingsDialog(QDialog):
             self.close()
 
     def nuke_profile(self):
-        datapath = QStandardPaths.writableLocation(QStandardPaths.DataLocation)
         answer = QMessageBox.question(
             self,
             "Confirm Reset",
@@ -733,7 +734,7 @@ class SettingsDialog(QDialog):
     def register_config_handler(
             self,
             widget,
-            key,
+            key: SettingsDictKey,
             code_translate=False):
 
         def update(v): return settings.setValue(key, v)
