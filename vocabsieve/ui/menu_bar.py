@@ -29,10 +29,10 @@ class MenuBar(QMenuBar):
         if not settings.value("reader_enabled", True, type=bool):
             self.actionsDict["open_reader"].setEnabled(False)
 
-        self.addMenu("&About").addAction(self.actionsDict["about"])
-        self.addMenu("&Help").addAction(self.actionsDict["help"])
-        self.addMenu("&Reader").addAction(self.actionsDict["open_reader"])
+        self.addAction(self.actionsDict["open_reader"])
         self.addMenu("&Import").addActions([
             self.actionsDict["import_kindle"], self.actionsDict["import_koreader"]])
         self.addMenu("&Export").addActions([
             self.actionsDict["export_notes_csv"], self.actionsDict["export_lookups_csv"]])
+        self.addAction(self.actionsDict["about"])
+        self.addAction(self.actionsDict["help"])
