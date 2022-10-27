@@ -77,6 +77,10 @@ class LookupController():
         """
         lemmatize_word = use_lemmatize and settings.get("lemmatization")
 
+        # word was just looked up
+        if word == self.rawWordLookup:
+            return
+
         # Save the unlemmatized word so that it can be used by `lookup_exact_button`
         self.rawWordLookup = word
         # Clear any lookup failures from the last lookup
