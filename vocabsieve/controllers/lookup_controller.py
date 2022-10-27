@@ -1,3 +1,4 @@
+from optparse import Option
 from PyQt5.QtCore import QCoreApplication
 from ui.widgets import *
 from ui.searchable_text_edit import *
@@ -8,6 +9,7 @@ from dictionary.dictionary import *
 from controllers.freq_controller import *
 from controllers.word_audio_controller import *
 from controllers.state import *
+from app_threading import *
 
 class LookupController():
     def __init__(self, widgets: Widgets):
@@ -116,38 +118,48 @@ class LookupController():
             else:
                 self.handlePartialLookupFailure(word, defn_field)
 
-        definition = self.lookup(word, defn_dict)
-        self.recordLookupRes(word, lemmatize_word, definition, defn_dict)
-        definition2 = None
+        # SOMEDAY Lookups could be run asynchronously
+        def perform_lookups():
+            definition = self.lookup(word, defn_dict)
+            definition2 = None
+            if using_defn2:
+                definition2 = self.lookup(word, defn2_dict)
 
-        if not using_defn2:
-            if not definition:
-                self.handleCompleteLookupFailure(word, self.widgets.definition)
-            else: 
-                self.setDefinitionFieldState(
-                    defn_dict,
-                    self.widgets.definition,
-                    definition
-                )
-        else:
-            definition2 = self.lookup(word, defn2_dict)
-            self.recordLookupRes(word, lemmatize_word, definition2, defn2_dict)
+            return (definition, definition2)
 
-            if not definition and not definition2:
-                self.handleCompleteLookupFailure(word, self.widgets.definition)
-                self.handleCompleteLookupFailure(word, self.widgets.definition2)
+        def receive_lookups(definition: str, definition2: Optional[str]):
+            self.recordLookupRes(word, lemmatize_word, definition, defn_dict)
+
+            if not using_defn2:
+                if not definition:
+                    self.handleCompleteLookupFailure(word, self.widgets.definition)
+                else: 
+                    self.setDefinitionFieldState(
+                        defn_dict,
+                        self.widgets.definition,
+                        definition
+                    )
             else:
-                set_definition_or_partial_failure(
-                    defn_dict,
-                    self.widgets.definition,
-                    definition)
-                set_definition_or_partial_failure(
-                    defn2_dict,
-                    self.widgets.definition2,
-                    definition2)
+                self.recordLookupRes(word, lemmatize_word, definition2, defn2_dict)
 
-        self.freqController.lookupAndUpdateState(word)
+                if not definition and not definition2:
+                    self.handleCompleteLookupFailure(word, self.widgets.definition)
+                    self.handleCompleteLookupFailure(word, self.widgets.definition2)
+                else:
+                    set_definition_or_partial_failure(
+                        defn_dict,
+                        self.widgets.definition,
+                        definition)
+                    set_definition_or_partial_failure(
+                        defn2_dict,
+                        self.widgets.definition2,
+                        definition2)
+
+        lookup_worker = Worker(perform_lookups, lambda t: receive_lookups(*t))
+        QThreadPool.globalInstance().start(lookup_worker)
+
         self.wordAudioController.lookupAndUpdateState(word)
+        self.freqController.lookupAndUpdateState(word)
 
     def lookup(
         self, 
@@ -156,8 +168,6 @@ class LookupController():
         """
         Call `lookupin()` for @word in @dictname.
         """
-        print("Looking up:", word)
-        print("In:", dictname)
         return lookupin(
             word,
             settings.get("target_language"),

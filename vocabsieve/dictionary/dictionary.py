@@ -143,7 +143,7 @@ def googletranslate(word, language, gtrans_lang, gtrans_api) -> Optional[str]:
         return
 
 # Returns { [audio_name]: audio_url }
-def getAudio(word, language, dictionary="Forvo (all)", custom_dicts=[]) -> Optional[Dict[str, str]]:
+def get_audio(word, language, dictionary="Forvo (all)", custom_dicts=[]) -> Optional[Dict[str, str]]:
     if dictionary == "Forvo (all)":
         return fetch_audio_all(word, language)
     elif dictionary == "Forvo (best)":

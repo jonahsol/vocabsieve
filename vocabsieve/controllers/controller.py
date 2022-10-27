@@ -63,12 +63,12 @@ class Controller():
         self.selectedText = getSelectedText(field)
 
     def handleSearchableDoubledClicked(self, field: SearchableTextEdit):
-        if self.selectedText != None:
-            self.lookupController.lookupAndUpdateState(self.selectedText)
-        else: raise_bad_path_exception("""
+        assert self.selectedText != None, """
             `self.selectedText` should have be defined by 
             `handleSearchableSelectionChanged` prior to entry into 
-            `handleSearchableDoubledClicked`.""")
+            `handleSearchableDoubledClicked`."""
+
+        self.lookupController.lookupAndUpdateState(self.selectedText)
 
     def lookupCurrentSelectionOrPrevWord(self, use_lemmatize: bool):
         if hasattr(self, "selectedText") and self.selectedText != None:

@@ -10,7 +10,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from sentence_splitter import split_text_into_sentences
 from anki_connect import addNotes
-from dictionary.dictionary import getAudio
+from dictionary.dictionary import get_audio
 from datetime import datetime
 from itertools import compress
 from slpp import slpp
@@ -210,7 +210,7 @@ class KoreaderImporter(QDialog):
                 audio_path = ""
                 if settings.value("audio_dict", "Forvo (all)") != DISABLED:
                     try:
-                        audios = getAudio(
+                        audios = get_audio(
                                 word,
                                 settings.value("target_language", 'en'),
                                 dictionary=settings.value("audio_dict", "Forvo (all)"),

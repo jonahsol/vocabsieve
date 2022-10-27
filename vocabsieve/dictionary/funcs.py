@@ -1,7 +1,7 @@
 import os
 from db import *
 from pystardict import Dictionary
-from dictionary.dictionary import dictdb
+from dictionary.dictionary import *
 from dictionary.dictformats import *
 from xdxftransform import xdxf2html
 

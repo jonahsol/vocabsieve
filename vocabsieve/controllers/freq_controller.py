@@ -1,6 +1,9 @@
+from optparse import Option
 from ui.widgets import *
 from settings import *
 from dictionary.dictionary import apply_lemmatization, getFreq
+from app_threading import *
+from typing import Tuple
 
 class FreqController():
     def __init__(self, widgets: Widgets):
@@ -11,31 +14,36 @@ class FreqController():
         if freqname == DISABLED:
             return
 
-        freq_found = False
         freq_display = settings.get("freq_display")
         lemfreq = settings.get("lemfreq")
-        try:
-            word_copy = str(word)
-            if lemfreq:
-                word_copy = apply_lemmatization(
-                    word_copy, 
-                    settings.get("target_language"), 
-                    settings.get("lem_greedily"))
-            freq, max_freq = getFreq(word_copy, settings.get("target_language"), freqname)
-            freq_found = True
-        except TypeError:
-            pass
 
-        if freq_found:
-            if freq_display == "Rank":
-                self.widgets.freq_display.setText(f'{str(freq)}/{str(max_freq)}')
-            elif freq_display == "Stars":
-                self.widgets.freq_display.setText(freq_to_stars(freq, lemfreq))
-        else:
-            if freq_display == "Rank":
-                self.widgets.freq_display.setText('-1')
-            elif freq_display == "Stars":
-                self.widgets.freq_display.setText(freq_to_stars(1e6, lemfreq))
+        def perform_lookup() -> Optional[Tuple[int, int]]:
+            try:
+                word_copy = str(word)
+                if lemfreq:
+                    word_copy = apply_lemmatization(
+                        word_copy, 
+                        settings.get("target_language"), 
+                        settings.get("lem_greedily"))
+                return getFreq(word_copy, settings.get("target_language"), freqname)
+            except TypeError:
+                pass
+
+        def receive_lookup(lookup_res: Optional[Tuple[int, int]]):
+            if lookup_res != None:
+                freq, max_freq = lookup_res
+                if freq_display == "Rank":
+                    self.widgets.freq_display.setText(f'{str(freq)}/{str(max_freq)}')
+                elif freq_display == "Stars":
+                    self.widgets.freq_display.setText(freq_to_stars(freq, lemfreq))
+            else:
+                if freq_display == "Rank":
+                    self.widgets.freq_display.setText('-1')
+                elif freq_display == "Stars":
+                    self.widgets.freq_display.setText(freq_to_stars(1e6, lemfreq))
+        
+        QThreadPool.globalInstance().start(Worker(perform_lookup, receive_lookup))
+
 
 def freq_to_stars(freq_num, lemmatize):
     if lemmatize:
