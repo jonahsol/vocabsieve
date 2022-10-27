@@ -12,6 +12,8 @@ from controllers.state import *
 from app_threading import *
 
 class LookupController():
+    rawWordLookup = None
+
     def __init__(self, widgets: Widgets):
         self.widgets = widgets
         self.freqController = FreqController(widgets)

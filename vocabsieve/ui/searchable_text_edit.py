@@ -21,15 +21,10 @@ class SearchableTextEdit(QTextEdit):
     def mouseDoubleClickEvent(self, e):
         super().mouseDoubleClickEvent(e)
         self.textCursor().clearSelection()
-        self.original = ""
 
     @pyqtSlot()
     def mousePressEvent(self, e):
         super().mousePressEvent(e)
-        
-    @pyqtSlot()
-    def handleSelectionChanged(self):
-        pass
 
 def reset_text_edit(text_edit: QTextEdit):
     text_edit.clear()

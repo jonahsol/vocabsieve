@@ -14,11 +14,12 @@ get_image_dir = lambda img_fl_name: path.join(images_path, img_fl_name)
 
 @lru_cache(maxsize=1)
 class State():
+    image_path: Optional[str] = None
+    audio_path: Optional[str] = None 
+    audio_options: Optional[Dict[str, str]] = None 
+
     def __init__(self, widgets: Widgets):
         self.widgets = widgets
-        self.image_path: Optional[str] = None
-        self.audio_path: Optional[str] = None 
-        self.audio_options: Optional[Dict[str, str]] = None 
 
     def hasLookupFailure(self, defn_field: SearchableTextEdit):
         return defn_field.partialLookupFailureBlock \

@@ -81,19 +81,12 @@ class HID():
                     searchable_text_edit.mousePressEvent,
                     lambda: self.controller.handleSearchableMousePress(searchable_text_edit)
                 ))
-
-        def connect_selection_changed_handler(searchable_text_edit: SearchableTextEdit):
             searchable_text_edit.selectionChanged.connect(
                 lambda: self.controller.handleSearchableSelectionChanged(searchable_text_edit)
             )
 
-        connect_selection_changed_handler(self.widgets.sentence)
         connect_slot_handlers(self.widgets.sentence)
-
-        connect_selection_changed_handler(self.widgets.definition)
         connect_slot_handlers(self.widgets.definition)
-
-        connect_selection_changed_handler(self.widgets.definition2)
         connect_slot_handlers(self.widgets.definition2)
 
     def connectClipboard(self):
